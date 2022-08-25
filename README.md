@@ -34,6 +34,14 @@
 * Ergonomic macros.
 * Any messages.
 
+**Usage:**
+
+**factor** is not published to [crates.io](https://crates.io), to use add below dependency to your `Cargo.toml` file.
+```toml
+[dependencies]
+factor = { git = "https://github.com/fasttravel-xyz/factor", branch = "0.0.1-dev0" }
+```
+
 **Basic Example:**
 ```rust
 use factor::prelude::*;

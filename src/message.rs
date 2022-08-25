@@ -60,12 +60,15 @@ where
                 }
             }
             MessageSender::RemoteSender { _remote_guardian } => {
+                // =============================================================
                 // [todo] cluster implementation is low priority.
-                // create the guardian::RemoteMessage and send to _remote_guardian for dispatch.
+                // [pseudocode] create the guardian::RemoteMessage and send to
+                //              _remote_guardian for dispatch:
                 // let remote_ref = core.address().unwrap().upgrade().unwrap();
                 // let r_msg = RemoteMessage{msg, remote_ref};
                 // let r_dispatcher = _remote_guardian.upgrade().unwrap();
                 // r_dispatcher->tell(r_msg);
+                // =============================================================
             }
         }
 
