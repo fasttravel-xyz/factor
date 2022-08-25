@@ -17,20 +17,21 @@ pub trait Message {
     type Result: 'static + Send;
 }
 
-/// Trait for the actor Message Sender.
-pub(crate) trait MessageSend<R: ActorReceiver>: Send {
+/// Trait for the actor Typed Message Sender.
+pub(crate) trait MessageSend<M: Message + Send + 'static>: Send {
+    // CHANGELOG [15/AUG/2022]: The trait has the generic `M: Message` and the
+    // implementing struct has the generic `R: ActorReceiver`. This way trait-objects
+    // of MessageSend could act as handlers/recipients of a single message type M.
+    // Keeping the generic M on the methods prevents creation of trait-object.
+
     /// Send message to the actor mailbox.
-    fn tell<M>(&self, msg: M) -> Result<(), MessageSendError>
-    where
-        M: Message + Send + 'static,
-        R: MessageHandler<M>;
+    fn tell(&self, msg: M) -> Result<(), MessageSendError>;
 
     /// Send message to the actor mailbox and receive a response back.
-    fn ask<M>(&self, msg: M) -> Result<oneshot::Receiver<M::Result>, MessageSendError>
-    where
-        M: Message + Send + 'static,
-        R: MessageHandler<M>;
+    fn ask(&self, msg: M) -> Result<oneshot::Receiver<M::Result>, MessageSendError>;
+}
 
+pub(crate) trait SystemMessageSend: Send {
     /// Send a system message to the actor mailbox.
     fn tell_sys(&self, msg: SystemMessage) -> Result<(), MessageSendError>;
 }
@@ -42,12 +43,12 @@ pub(crate) enum MessageSender<R: ActorReceiver> {
     RemoteSender { _remote_guardian: ActorWeakRef<R> },
 }
 
-impl<R: ActorReceiver> MessageSend<R> for MessageSender<R> {
-    fn tell<M>(&self, msg: M) -> Result<(), MessageSendError>
-    where
-        M: Message + Send + 'static,
-        R: MessageHandler<M>,
-    {
+impl<R, M> MessageSend<M> for MessageSender<R>
+where
+    M: Message + Send + 'static,
+    R: ActorReceiver + MessageHandler<M>,
+{
+    fn tell(&self, msg: M) -> Result<(), MessageSendError> {
         let mut result = Ok(());
 
         match self {
@@ -71,11 +72,7 @@ impl<R: ActorReceiver> MessageSend<R> for MessageSender<R> {
         result
     }
 
-    fn ask<M>(&self, msg: M) -> Result<oneshot::Receiver<M::Result>, MessageSendError>
-    where
-        M: Message + Send + 'static,
-        R: MessageHandler<M>,
-    {
+    fn ask(&self, msg: M) -> Result<oneshot::Receiver<M::Result>, MessageSendError> {
         let (tx, rx) = oneshot::channel::<M::Result>();
         let mut result = Ok(rx);
 
@@ -92,7 +89,12 @@ impl<R: ActorReceiver> MessageSend<R> for MessageSender<R> {
 
         result
     }
+}
 
+impl<R> SystemMessageSend for MessageSender<R>
+where
+    R: ActorReceiver,
+{
     fn tell_sys(&self, msg: SystemMessage) -> Result<(), MessageSendError> {
         let mut result = Ok(());
 

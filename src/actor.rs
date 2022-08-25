@@ -11,6 +11,7 @@ use crate::actor::receiver::ActorReceiver;
 use crate::common;
 use crate::message::{
     handler::MessageHandler, Message, MessageSend, MessageSendError, MessageSender,
+    SystemMessageSend,
 };
 use crate::system::{guardian::ActorGuardianType, SystemId, SystemMessage};
 
