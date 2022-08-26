@@ -151,11 +151,11 @@ For examples refer to the [tests] directory:
 
 More examples will be added to the [examples] directory after v0.1.0 release.
 
-[tests]: https://github.com/
-[examples]: https://github.com/
-[tell-ask test]: https://github.com/
-[handshake test]: https://github.com/
-[init-stop test]: https://github.com/
+[tests]: https://github.com/fasttravel-xyz/factor/tree/0.0.1-dev0/tests
+[examples]: https://github.com/fasttravel-xyz/factor/tree/0.0.1-dev0/examples
+[tell-ask test]: https://github.com/fasttravel-xyz/factor/blob/0.0.1-dev0/tests/test_ask.rs
+[handshake test]: https://github.com/fasttravel-xyz/factor/blob/0.0.1-dev0/tests/test_handshake.rs
+[init-stop test]: https://github.com/fasttravel-xyz/factor/blob/0.0.1-dev0/tests/test_init_stop.rs
 
 ```sh
 # run all the tests:
@@ -174,7 +174,7 @@ For **sending** messages **factor** provides three type of addresses/references 
 pub struct Addr(pub Box<dyn Address + Send + Sync>);
 /// Address/Reference of an actor that hides the actor type and is only dependent on message type.
 /// Provides the basic services related to a message of a specific type.
-pub struct MessageAddr<M>(pub Box<dyn ActorMessageReceiver<M> + Sync>)
+pub struct MessageAddr<M>(pub Box<dyn ActorMessageReceiver<M> + Send + Sync>)
 where
     M: Message + Send + 'static,
     M::Result: Send;

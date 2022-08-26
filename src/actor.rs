@@ -44,7 +44,7 @@ pub struct Addr(pub Box<dyn Address + Send + Sync>);
 
 /// Address/Reference of an actor that hides the actor type and is only dependent on message type.
 /// Provides the basic services related to a message of a specific type.
-pub struct MessageAddr<M>(pub Box<dyn ActorMessageReceiver<M> + Sync>)
+pub struct MessageAddr<M>(pub Box<dyn ActorMessageReceiver<M> + Send + Sync>)
 where
     M: Message + Send + 'static,
     M::Result: Send;
@@ -105,7 +105,7 @@ pub trait Address: common::AsAny {
 
 /// Basic trait for exposing interface to send a message of specific type.
 pub trait ActorMessageReceiver<M: Message + Send + 'static> {
-    fn boxed(&self) -> Box<dyn ActorMessageReceiver<M> + Sync>;
+    fn boxed(&self) -> Box<dyn ActorMessageReceiver<M> + Send + Sync>;
     fn tell_msg(&self, msg: M) -> Result<(), MessageSendError>;
     fn ask_msg(&self, msg: M) -> Result<oneshot::Receiver<M::Result>, MessageSendError>;
 }
@@ -162,7 +162,7 @@ where
     M::Result: Send,
     R: MessageHandler<M>,
 {
-    fn boxed(&self) -> Box<dyn ActorMessageReceiver<M> + Sync> {
+    fn boxed(&self) -> Box<dyn ActorMessageReceiver<M> + Send + Sync> {
         Box::new(self.clone())
     }
 
