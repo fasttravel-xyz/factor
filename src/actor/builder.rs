@@ -3,15 +3,15 @@ use std::sync::Arc;
 
 use crate::actor::{
     core::{ActorCore, LopperTask},
-    receiver::{ActorReceiver, FunctionHandler},
-    ActorId, ActorRef, ActorRefInner, ActorWeakRef,
+    receiver::{ActorReceiver, FnHandlerContext, FunctionHandler},
+    ActorAddr, ActorAddrInner, ActorId, ActorWeakAddr,
 };
 use crate::message::{Message, MessageSender};
 use crate::system::{guardian::ActorGuardianType, SystemRef};
 
 // ActorSpawnItem
 pub struct ActorSpawnItem<R: ActorReceiver> {
-    pub(crate) address: ActorRef<R>,
+    pub(crate) address: ActorAddr<R>,
     pub(crate) looper_task: LopperTask<R>,
 }
 
@@ -38,7 +38,7 @@ impl ActorBuilder {
         system: &SystemRef,
     ) -> Option<ActorSpawnItem<FunctionHandler<F, M>>>
     where
-        F: (Fn(M) -> M::Result) + Send + Sync + 'static,
+        F: (Fn(M, &mut FnHandlerContext) -> M::Result) + Send + Sync + 'static,
         M: Message + Send + 'static,
     {
         let receiver = FunctionHandler::new(f);
@@ -55,14 +55,12 @@ impl ActorBuilder {
     fn create_cyclic<R: ActorReceiver, F>(
         task: &mut LopperTask<R>,
         data_fn: F,
-    ) -> Arc<ActorRefInner<R>>
+    ) -> Arc<ActorAddrInner<R>>
     where
-        F: FnOnce(&ActorWeakRef<R>, &mut LopperTask<R>) -> ActorRefInner<R>,
+        F: FnOnce(&ActorWeakAddr<R>, &mut LopperTask<R>) -> ActorAddrInner<R>,
     {
         let inner = Arc::new_cyclic(|weak_inner| {
-            let weak_ref = ActorWeakRef {
-                inner: weak_inner.clone(),
-            };
+            let weak_ref = ActorWeakAddr::new(weak_inner.clone());
             data_fn(&weak_ref, task)
         });
 
@@ -94,7 +92,7 @@ impl ActorBuilder {
                 id = Some(aid);
             }
 
-            ActorRefInner { id, sender }
+            ActorAddrInner { id, sender }
         });
 
         if inner.id.is_none() {
@@ -103,7 +101,7 @@ impl ActorBuilder {
             return Err(ActorCreationError::MessageSenderCreationError);
         }
 
-        let address = ActorRef::new(inner);
+        let address = ActorAddr::new(inner);
         Ok(ActorSpawnItem {
             address,
             looper_task,

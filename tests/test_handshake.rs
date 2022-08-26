@@ -32,7 +32,7 @@ struct MessageHeader<R: ActorReceiver> {
     bitmask: u8,
     syn_seq: u16,
     ack_seq: u16,
-    source: Option<ActorWeakRef<R>>,
+    source: Option<ActorWeakAddr<R>>,
 }
 
 impl<R: ActorReceiver> Message for MessageHeader<R> {
@@ -106,7 +106,7 @@ impl<R: ActorReceiver> MessageHeader<R> {
 //==============================================================================
 
 struct HandshakeClient {
-    server: ActorRef<HandshakeServer>,
+    server: ActorAddr<HandshakeServer>,
 }
 
 impl ActorReceiver for HandshakeClient {
@@ -121,11 +121,11 @@ impl ActorReceiver for HandshakeClient {
 }
 
 impl HandshakeClient {
-    fn new(server: ActorRef<HandshakeServer>) -> Self {
+    fn new(server: ActorAddr<HandshakeServer>) -> Self {
         Self { server }
     }
 
-    async fn handshake(server: ActorRef<HandshakeServer>, self_addr: ActorRef<Self>) {
+    async fn handshake(server: ActorAddr<HandshakeServer>, self_addr: ActorAddr<Self>) {
         CHECK.fetch_add(1, Ordering::SeqCst);
         let mut syn_msg = MessageHeader::<Self>::new();
         syn_msg.syn_seq = SYN_SEQ_RANDOM_A;

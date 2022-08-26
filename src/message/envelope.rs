@@ -51,7 +51,7 @@ pub(crate) trait SystemPayload<R: ActorReceiver> {
 }
 
 /// The Envelope for SystemMessage payload.
-pub struct SystemEnvelope<R: ActorReceiver> {
+pub(crate) struct SystemEnvelope<R: ActorReceiver> {
     data: Box<dyn SystemPayload<R> + Send>,
 }
 

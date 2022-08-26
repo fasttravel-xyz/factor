@@ -15,7 +15,7 @@ use std::{
 use crate::actor::{
     builder::ActorSpawnItem,
     receiver::{ActorReceiver, BasicContext},
-    ActorRef, Address,
+    ActorAddr, Addr,
 };
 use crate::common;
 use crate::system::guardian::{
@@ -25,7 +25,7 @@ use crate::system::guardian::{
 /// System Reference. Cloning only clones the light reference.
 pub type SystemRef = Arc<ActorSystem>;
 /// System Weak Reference. Upgradable to SystemRef.
-pub type SystemWeakRef = Weak<ActorSystem>;
+pub(crate) type SystemWeakRef = Weak<ActorSystem>;
 
 // System messages are Messages with this enum as payload.
 pub enum SystemMessage {
@@ -49,9 +49,17 @@ pub enum SystemCommand {
 
 // PubSub Messages/Events for subscription by ineterested Actor.
 pub enum SystemEvent {
-    ActorCreated(Address),
-    ActorRestarted(Address),
-    ActorTerminated(Address),
+    ActorCreated(Addr),
+    ActorRestarted(Addr),
+    ActorTerminated(Addr),
+}
+
+#[allow(dead_code)]
+pub enum ActorState {
+    Running,
+    Paused,
+    Stopping,
+    Stopped,
 }
 
 impl fmt::Display for SystemEvent {
@@ -153,7 +161,7 @@ impl ActorSystem {
         self.per_actor_time_slice
     }
 
-    /// get the guardian reference (ActorRef of the delegate guardian actor).
+    /// get the guardian reference (ActorAddr of the delegate guardian actor).
     pub(crate) fn get_guardian_ref(&self, g_type: &ActorGuardianType) -> Option<GuardianRef> {
         match g_type {
             ActorGuardianType::User => self.guardians.user.get_delegate(),
@@ -184,7 +192,7 @@ impl ActorSystem {
     /// Run the actor spawn item in the system executor that was created using  
     /// "ActorBuilder::create" or "ActorBuilder::create_fn".
     /// This method consumes "item", which is what we want.
-    pub fn run_actor<R>(&self, item: ActorSpawnItem<R>) -> ActorRef<R>
+    pub fn run_actor<R>(&self, item: ActorSpawnItem<R>) -> ActorAddr<R>
     where
         R: ActorReceiver<Context = BasicContext<R>>,
     {

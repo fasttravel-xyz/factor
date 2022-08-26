@@ -5,7 +5,7 @@ use std::sync::{Arc, Mutex, Weak};
 use crate::actor::{
     mailbox::Mailbox,
     receiver::{ActorReceiver, BasicContext},
-    ActorWeakRef, Address,
+    ActorWeakAddr, Addr,
 };
 use crate::message::{
     envelope::{Envelope, Payload, SystemEnvelope, SystemPayload},
@@ -15,14 +15,6 @@ use crate::system::{
     guardian::{ActorGuardianType, GuardianWeakRef},
     SystemEvent, SystemMessage, SystemRef,
 };
-
-#[allow(dead_code)]
-pub enum ActorState {
-    Running,
-    Paused,
-    Stopping,
-    Stopped,
-}
 
 /// Messages related to actor looper and mailbox scheduling.
 #[allow(dead_code)]
@@ -45,7 +37,7 @@ pub(crate) struct ActorCore<R: ActorReceiver> {
     processor: Arc<Processor<R>>, // Option<> for RESTART
     looper: Looper<R>,            // Option<> for RESTART
     guardian: Option<GuardianWeakRef>,
-    address: Option<ActorWeakRef<R>>,
+    address: Option<ActorWeakAddr<R>>,
 }
 
 pub(in crate::actor) struct Processor<R: ActorReceiver> {
@@ -148,7 +140,7 @@ impl<R: ActorReceiver> ActorCore<R> {
         receiver: R,
         system: &SystemRef,
         g_type: &ActorGuardianType,
-        address: ActorWeakRef<R>,
+        address: ActorWeakAddr<R>,
     ) -> Result<(Arc<Self>, LopperTask<R>), ActorCoreCreationError> {
         let (looper, mut looper_task) = ActorCore::create_looper();
 
@@ -225,7 +217,7 @@ impl<R: ActorReceiver> ActorCore<R> {
         let _ = self.looper.tx_cmd.send(CoreCommand::Pause(b));
     }
 
-    pub(crate) fn address(&self) -> Option<ActorWeakRef<R>> {
+    pub(crate) fn address(&self) -> Option<ActorWeakAddr<R>> {
         self.address.clone()
     }
 
@@ -241,7 +233,7 @@ impl<R: ActorReceiver> ActorCore<R> {
                             trace!("ActorCore::stop::error {}", e);
                         }
 
-                        let msg = SystemMessage::Event(SystemEvent::ActorTerminated(Address(
+                        let msg = SystemMessage::Event(SystemEvent::ActorTerminated(Addr(
                             Box::new(addr),
                         )));
                         if let Err(e) = g.tell_sys(msg) {

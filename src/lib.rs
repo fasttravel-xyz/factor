@@ -1,4 +1,4 @@
-//! factor is a Rust library to build concurrent services using the Actor Model.
+//! factor is a Rust framework to build concurrent services using the Actor Model.
 //!
 //! factor is designed to support remote actors if required in future, so all
 //! interactions with the actors is only through messages. Even Lifecycle commands
@@ -32,21 +32,30 @@
 // Axiom Actor Model for Rust: https://github.com/rsimmonsjr/axiom
 // ============================================
 
+#![deny(unreachable_pub, private_in_public)]
+#![forbid(unsafe_code)]
+
 // modules of the crate
 mod actor;
 mod common;
 mod message;
 mod system;
 
-// public interface of the crate. Use the prelude for more interfaces.
+// public interface of the crate. Use the prelude for glob import.
 pub use actor::builder;
-pub use actor::receiver::{ActorReceiver, BasicContext};
-pub use actor::ActorRef;
+pub use actor::receiver;
+pub use actor::receiver::{ActorReceiver, ActorReceiverContext, BasicContext, FnHandlerContext};
+pub use actor::{ActorAddr, ActorWeakAddr, Addr, MessageAddr};
 pub use message::{
-    handler::{MessageHandler, MessageResponseType},
+    handler::{
+        MessageHandler, MessageResponse, MessageResponseType, ReplyTo, ReplyToRef, ResponseFuture,
+        ResponseResult,
+    },
     Message,
 };
-pub use system::SystemRef;
+pub use system::{
+    ActorState, ActorSystemCofig, SystemCommand, SystemEvent, SystemMessage, SystemRef,
+};
 
 pub mod prelude {
     //! The 'factor' prelude.
@@ -61,8 +70,8 @@ pub mod prelude {
     pub use crate::{
         actor::{
             builder,
-            receiver::{ActorReceiver, ActorReceiverContext, BasicContext},
-            ActorRef, ActorWeakRef,
+            receiver::{ActorReceiver, ActorReceiverContext, BasicContext, FnHandlerContext},
+            ActorAddr, ActorWeakAddr,
         },
         message::{
             handler::{MessageHandler, MessageResponseType, ResponseResult},
@@ -75,14 +84,14 @@ pub mod prelude {
 ////////////////////////////////////////////////////////////////////////////////
 
 thread_local! {
-    static FACTOR: std::cell::RefCell<FactorLocalResource> = std::cell::RefCell::new(FactorLocalResource::new());
+    static FACTOR: std::cell::RefCell<FactorLocalResources> = std::cell::RefCell::new(FactorLocalResources::new());
 }
 
 /// Thread local resources
-struct FactorLocalResource {
+struct FactorLocalResources {
     pool: Box<futures::executor::LocalPool>,
 }
-impl FactorLocalResource {
+impl FactorLocalResources {
     fn new() -> Self {
         Self {
             pool: Box::new(futures::executor::LocalPool::new()),
@@ -91,7 +100,7 @@ impl FactorLocalResource {
 }
 
 /// Initialize the system per process
-pub fn init_system(name: Option<String>) -> SystemRef {
+pub fn init_system(name: Option<String>) -> system::SystemRef {
     // add an atomic bool check
     system::ActorSystem::create_system(name)
 }

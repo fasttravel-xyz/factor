@@ -22,7 +22,7 @@ pub trait MessageResponse<M: Message, R: ActorReceiver> {
     fn handle(self, ctx: &mut R::Context, tx: ReplyToRef<M>);
 }
 
-pub(crate) trait ReplyTo<M: Message> {
+pub trait ReplyTo<M: Message> {
     fn reply(self, response: M::Result);
 }
 

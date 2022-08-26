@@ -44,7 +44,7 @@ impl<R: ActorReceiver> Mailbox<R> {
         }
     }
 
-    pub fn set_paused(&self, b: bool) {
+    pub(crate) fn set_paused(&self, b: bool) {
         self.data.paused.store(b, Ordering::Relaxed);
     }
 
@@ -52,7 +52,7 @@ impl<R: ActorReceiver> Mailbox<R> {
         self.data.paused.load(Ordering::Relaxed)
     }
 
-    pub fn set_limit_break(&self, b: bool) {
+    pub(crate) fn set_limit_break(&self, b: bool) {
         self.data.limit_break.store(b, Ordering::Relaxed);
     }
 

@@ -15,8 +15,8 @@ where
 }
 
 /// Entity UUID for the crate.
-pub type EntityId = u128; // [todo] distributed id-generation (e.g. sonyflake/snowflake)
+pub(crate) type EntityId = u128; // [todo] distributed id-generation (e.g. sonyflake/snowflake)
 /// Generate Entity Id.
-pub fn generate_entity_id() -> Result<EntityId, ()> {
+pub(crate) fn generate_entity_id() -> Result<EntityId, ()> {
     Ok(Uuid::new_v4().as_u128()) // return Result in case error handling required in future
 }

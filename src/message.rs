@@ -1,11 +1,11 @@
 pub(crate) mod envelope;
-pub mod handler;
+pub(crate) mod handler;
 
 use futures::channel::oneshot;
 use log::trace;
 use std::sync::Arc;
 
-use crate::actor::{core::ActorCore, receiver::ActorReceiver, ActorWeakRef};
+use crate::actor::{core::ActorCore, receiver::ActorReceiver, ActorWeakAddr};
 use crate::message::{
     envelope::{Envelope, SystemEnvelope},
     handler::MessageHandler,
@@ -40,7 +40,7 @@ pub(crate) trait SystemMessageSend: Send {
 #[allow(dead_code)]
 pub(crate) enum MessageSender<R: ActorReceiver> {
     LocalSender { core: Arc<ActorCore<R>> },
-    RemoteSender { _remote_guardian: ActorWeakRef<R> },
+    RemoteSender { _remote_guardian: ActorWeakAddr<R> },
 }
 
 impl<R, M> MessageSend<M> for MessageSender<R>

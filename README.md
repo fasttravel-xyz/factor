@@ -2,7 +2,7 @@
   <h1>factor</h2>
 </div>
 
-**factor** is a Rust library to build concurrent services using the Actor Model.
+**factor** is a Rust framework to build concurrent services using the Actor Model.
 
 >*The current version of this repository is 0.0.1-dev0 and is undergoing development for the first release client 0.1.0-rc0, which means that both the public interfaces and internal module structures may change significantly.*
 
@@ -163,6 +163,58 @@ cargo test
 
 # run an example:
 cargo run --example example_ask
+```
+
+**Common Types and Traits:**
+
+For **sending** messages **factor** provides three type of addresses/references (and their Weak counterparts) to an actor depending on the services they expose.
+```rust
+/// Address/Reference of an actor that hides the actor and message type and has no generic dependence.
+/// Provides the basic services related to ActorId and SystemMessage.
+pub struct Addr(pub Box<dyn Address + Send + Sync>);
+/// Address/Reference of an actor that hides the actor type and is only dependent on message type.
+/// Provides the basic services related to a message of a specific type.
+pub struct MessageAddr<M>(pub Box<dyn ActorMessageReceiver<M> + Sync>)
+where
+    M: Message + Send + 'static,
+    M::Result: Send;
+/// Address/Reference of an Actor that is dependent on the actor type (struct generic) and message type (method generic).
+/// Provides all the services related to an actor.
+pub struct ActorAddr<R: ActorReceiver>(Arc<ActorAddrInner<R>>);
+```
+
+For **receiving** messages **factor** provides two traits that actor types could implement to receive messages.
+```rust
+/// All message types must implement this trait.
+pub trait Message {
+    type Result: 'static + Send;
+}
+/// All actor types must implement this trait.
+pub trait ActorReceiver
+where
+    Self: Send + 'static + Sized,
+{
+    type Context: ActorReceiverContext<Self>;
+    /// Receive and handle system events.
+    fn recv_sys(&mut self, _msg: &SystemEvent, _ctx: &mut Self::Context);
+    /// Handle and finalize actor creation.
+    fn finalize_init(&mut self, _ctx: &mut Self::Context);
+    /// Handle and finalize actor termination.
+    fn finalize_stop(&mut self, _ctx: &mut Self::Context);
+    ...
+}
+/// Trait to be implemented to handle specific messages.
+pub trait MessageHandler<M>
+where
+    M: Message,
+    Self: ActorReceiver,
+{
+    /// Message Response Type conforms to MessageResponse trait
+    type Result: MessageResponse<M, Self>;
+    /// Called for every message received by the actor
+    fn handle(&mut self, msg: M, ctx: &mut Self::Context) -> Self::Result;
+    ...
+}
 ```
 
 ## Contributing

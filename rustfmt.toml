@@ -3,7 +3,8 @@ tab_spaces = 4
 max_width = 100
 newline_style = "Unix"
 reorder_imports = true
-edition = "2018"
+edition = "2021"
 
-# nightly features
+# nightly channel features
 # wrap_comments = true
+# blank_lines_upper_bound = 4

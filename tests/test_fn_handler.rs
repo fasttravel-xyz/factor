@@ -9,7 +9,10 @@ impl Message for FnMessageAdd {
     type Result = Option<u8>;
 }
 
-fn msg_handler(msg: FnMessageAdd) -> <FnMessageAdd as Message>::Result {
+fn msg_handler(
+    msg: FnMessageAdd,
+    _ctx: &mut FnHandlerContext,
+) -> <FnMessageAdd as Message>::Result {
     SUM.fetch_add(msg.0, Ordering::SeqCst);
     CALL_COUNT.fetch_add(1, Ordering::SeqCst);
     None

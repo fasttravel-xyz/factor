@@ -7,14 +7,14 @@ use std::sync::{Arc, Weak};
 use crate::actor::{
     builder::ActorBuilder,
     receiver::{ActorReceiver, BasicContext},
-    ActorRef, ActorWeakRef, Address,
+    ActorAddr, ActorWeakAddr, Addr,
 };
 use crate::system::{SystemEvent, SystemWeakRef};
 
 pub(crate) type BoxedGuardianHandle = Arc<BoxedActorGuardian>;
 pub(crate) type BoxedGuardianWeakHandle = Weak<BoxedActorGuardian>;
-pub(crate) type GuardianRef = ActorRef<GuardianReceiver>;
-pub(crate) type GuardianWeakRef = ActorWeakRef<GuardianReceiver>;
+pub(crate) type GuardianRef = ActorAddr<GuardianReceiver>;
+pub(crate) type GuardianWeakRef = ActorWeakAddr<GuardianReceiver>;
 
 /// The guardians of all the Actors in the System.
 pub(crate) struct Guardians {
@@ -61,7 +61,7 @@ impl BoxedActorGuardian {
         self.0.run(handle)
     }
 
-    pub(crate) fn get_delegate(&self) -> Option<ActorRef<GuardianReceiver>> {
+    pub(crate) fn get_delegate(&self) -> Option<ActorAddr<GuardianReceiver>> {
         self.0.get_delegate()
     }
 }
@@ -79,7 +79,7 @@ pub enum ActorGuardianType {
 }
 
 impl ActorGuardian {
-    pub fn new(
+    pub(crate) fn new(
         g_type: &ActorGuardianType,
         system: SystemWeakRef,
     ) -> Result<Self, GuardianCreationError> {
@@ -130,7 +130,7 @@ impl ActorGuardian {
         }
     }
 
-    pub(crate) fn get_delegate(&self) -> Option<ActorRef<GuardianReceiver>> {
+    pub(crate) fn get_delegate(&self) -> Option<ActorAddr<GuardianReceiver>> {
         if let Some(delegate) = self.inner().delegate.read().as_ref() {
             return Some(delegate.clone());
         }
@@ -153,16 +153,16 @@ impl ActorGuardian {
 // the specialized-executor with thread-level control. Both deal with resource
 // allocation/management at a granular level.
 pub(crate) trait Supervisor {
-    fn add_actor<R: ActorReceiver>(&self, child: ActorRef<R>);
-    fn remove_actor<R: ActorReceiver>(&self, child: ActorRef<R>);
-    fn add_address(&self, child: Address);
-    fn remove_address(&self, child: &Address);
+    fn add_actor<R: ActorReceiver>(&self, child: ActorAddr<R>);
+    fn remove_actor<R: ActorReceiver>(&self, child: ActorAddr<R>);
+    fn add_address(&self, child: Addr);
+    fn remove_address(&self, child: &Addr);
 }
 
 struct Inner {
     system: SystemWeakRef,
-    delegate: RwLock<Option<ActorRef<GuardianReceiver>>>,
-    addresses: DashMap<String, Address>,
+    delegate: RwLock<Option<ActorAddr<GuardianReceiver>>>,
+    addresses: DashMap<String, Addr>,
 }
 
 pub(crate) struct GuardianReceiver(BoxedGuardianWeakHandle);
@@ -183,41 +183,41 @@ impl ActorReceiver for GuardianReceiver {
 }
 
 impl Supervisor for ActorGuardian {
-    fn add_actor<R: ActorReceiver>(&self, actor: ActorRef<R>) {
+    fn add_actor<R: ActorReceiver>(&self, actor: ActorAddr<R>) {
         self.add_address(actor.get_address());
     }
 
-    fn remove_actor<R: ActorReceiver>(&self, actor: ActorRef<R>) {
+    fn remove_actor<R: ActorReceiver>(&self, actor: ActorAddr<R>) {
         let id = actor.get_id();
         self.inner().addresses.remove(&id.get_path_str());
     }
 
-    fn add_address(&self, address: Address) {
-        let id = address.0.get_actor_id();
+    fn add_address(&self, address: Addr) {
+        let id = address.get_id();
         self.inner().addresses.insert(id.get_path_str(), address);
     }
 
-    fn remove_address(&self, address: &Address) {
+    fn remove_address(&self, address: &Addr) {
         println!("{}", "===== remove_address =====");
-        let id = address.0.get_actor_id();
+        let id = address.get_id();
         self.inner().addresses.remove(&id.get_path_str());
     }
 }
 
 impl Supervisor for BoxedActorGuardian {
-    fn add_actor<R: ActorReceiver>(&self, actor: ActorRef<R>) {
+    fn add_actor<R: ActorReceiver>(&self, actor: ActorAddr<R>) {
         self.0.as_ref().add_actor(actor);
     }
 
-    fn remove_actor<R: ActorReceiver>(&self, actor: ActorRef<R>) {
+    fn remove_actor<R: ActorReceiver>(&self, actor: ActorAddr<R>) {
         self.0.as_ref().remove_actor(actor);
     }
 
-    fn add_address(&self, address: Address) {
+    fn add_address(&self, address: Addr) {
         self.0.as_ref().add_address(address);
     }
 
-    fn remove_address(&self, address: &Address) {
+    fn remove_address(&self, address: &Addr) {
         self.0.as_ref().remove_address(address);
     }
 }
@@ -225,7 +225,7 @@ impl Supervisor for BoxedActorGuardian {
 // [todo] MessageSender -> RemoteMessage -> DispatchRPC
 // pub(crate) struct RemoteMessage<M: Message, R: ActorReceiver> {
 //     msg: M,
-//     remote_ref: ActorRef<R>,
+//     remote_ref: ActorAddr<R>,
 // }
 // impl Message for RemoteMessage {type Result= u32;}
 // impl MessageHandler<RemoteMessage> for GuardianReceiver {}
