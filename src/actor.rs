@@ -209,6 +209,17 @@ where
     }
 }
 
+impl<R, M> From<&ActorAddr<R>> for MessageAddr<M>
+where
+    R: ActorReceiver + MessageHandler<M>,
+    M: Message + Send + 'static,
+    M::Result: Send,
+{
+    fn from(addr: &ActorAddr<R>) -> Self {
+        MessageAddr(<ActorAddr<R> as ActorMessageReceiver<M>>::boxed(&addr))
+    }
+}
+
 /// [SERIALIZE]: When serializing we serialize only the identifier and not the runtime
 /// resolved comm channels and resources. As ActorAddr will be passed around
 /// between nodes of the cluster inside messages, resolved resources have
@@ -253,6 +264,16 @@ impl<R: ActorReceiver> ActorAddr<R> {
     /// Get the Address of the actor.
     pub fn get_address(&self) -> Addr {
         Addr(Box::new(self.clone()))
+    }
+
+    /// get the MessageAddr of the actor for a message type
+    pub fn message_addr<M>(&self) -> MessageAddr<M>
+    where
+        R: MessageHandler<M>,
+        M: Message + Send + 'static,
+        M::Result: Send,
+    {
+        self.into()
     }
 
     /// Get the weak actor refernce of the actor.

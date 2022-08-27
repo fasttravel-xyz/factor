@@ -183,7 +183,7 @@ where
 pub struct ActorAddr<R: ActorReceiver>(Arc<ActorAddrInner<R>>);
 ```
 
-For **receiving** messages **factor** provides two traits that actor types could implement to receive messages.
+For **receiving** messages **factor** provides few traits that actor/message types could implement to receive messages.
 ```rust
 /// All message types must implement this trait.
 pub trait Message {
