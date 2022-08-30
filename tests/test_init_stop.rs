@@ -101,7 +101,7 @@ impl MessageHandler<MessageInItStr> for OpsReceiver {
 async fn test_init_stop() {
     let sys = factor::init_system(Some("TestSystem".to_string()));
 
-    let mut spawn_item = builder::ActorBuilder::create(OpsReceiver::default(), &sys);
+    let mut spawn_item = builder::ActorBuilder::create(|| OpsReceiver::default(), &sys);
     let addr_a = sys.run_actor(spawn_item.unwrap());
     let result = addr_a.ask(MessageInItStr {});
     assert!(result.is_ok());
@@ -109,7 +109,7 @@ async fn test_init_stop() {
         assert_eq!(msg, INIT_MSG);
     }
 
-    spawn_item = builder::ActorBuilder::create(OpsReceiver::default(), &sys);
+    spawn_item = builder::ActorBuilder::create(|| OpsReceiver::default(), &sys);
     let addr_b = sys.run_actor(spawn_item.unwrap());
 
     // loop 5 times

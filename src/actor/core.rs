@@ -1,4 +1,5 @@
 use flume;
+use futures::executor::{ThreadPool, ThreadPoolBuilder};
 use log::trace;
 use std::sync::{Arc, Mutex, Weak};
 
@@ -32,12 +33,23 @@ pub(in crate::actor) enum CoreCommand {
 type MsgSender<R> = flume::Sender<Box<dyn Payload<R> + Send>>;
 type SysMsgSender<R> = flume::Sender<Box<dyn SystemPayload<R> + Send>>;
 
+/// Actor core executor type.
+#[derive(Clone)]
+pub(crate) enum CoreExecutorType {
+    /// Single core, uses the system ThreadPool executor.
+    Single,
+    /// Pool of multiple actor cores, have their own ThreadPool executor.
+    /// For CPU bound tasks with computation requirements.
+    Pool(Arc<Box<ThreadPool>>),
+}
+
 #[allow(dead_code)]
 pub(crate) struct ActorCore<R: ActorReceiver> {
-    processor: Arc<Processor<R>>, // Option<> for RESTART
-    looper: Looper<R>,            // Option<> for RESTART
+    executor: CoreExecutorType,
     guardian: Option<GuardianWeakRef>,
     address: Option<ActorWeakAddr<R>>,
+    processors: Vec<Arc<Processor<R>>>, // index aligned with loopers
+    loopers: Vec<Looper<R>>,            // index aligned with processors
 }
 
 pub(in crate::actor) struct Processor<R: ActorReceiver> {
@@ -114,35 +126,55 @@ impl<R: ActorReceiver> LopperTask<R> {
 }
 
 impl<R: ActorReceiver> ActorCore<R> {
-    fn create_looper() -> (Looper<R>, LopperTask<R>) {
-        let (tx_cmd, rx_cmd) = flume::unbounded();
-        let (tx_msg, rx_msg) = flume::unbounded();
-        let (tx_msg_sys, rx_msg_sys) = flume::unbounded();
-        let mb = Arc::new(Mailbox::new(rx_msg, rx_msg_sys));
-        let mb_ref = mb.clone();
+    fn create_loopers(num_threads: usize) -> Vec<(Looper<R>, LopperTask<R>)> {
+        // number of loopers is same as num_threads. we could expose this to config if necessary.
+        let mut loopers: Vec<(Looper<R>, LopperTask<R>)> = Vec::new();
 
-        (
-            Looper {
-                tx_cmd,
-                tx_msg,
-                tx_msg_sys,
-                mb,
-            },
-            LopperTask {
-                rx_cmd: Some(rx_cmd),
-                mb_ref: Some(mb_ref),
-                processor: None,
-            },
-        )
+        // all loopers share the message queue.
+        let (tx_msg, rx_msg) = flume::unbounded();
+
+        // all loopers get their own cmd and sys_msg queues.
+        for _ in 0..num_threads {
+            let (tx_cmd, rx_cmd) = flume::unbounded();
+            let (tx_msg_sys, rx_msg_sys) = flume::unbounded();
+            let mb = Arc::new(Mailbox::new(rx_msg.clone(), rx_msg_sys));
+            let mb_ref = mb.clone();
+
+            loopers.push((
+                Looper {
+                    tx_cmd,
+                    tx_msg: tx_msg.clone(),
+                    tx_msg_sys,
+                    mb,
+                },
+                LopperTask {
+                    rx_cmd: Some(rx_cmd),
+                    mb_ref: Some(mb_ref),
+                    processor: None,
+                },
+            ))
+        }
+
+        loopers
     }
 
-    pub(crate) fn create_core(
-        receiver: R,
+    pub(crate) fn create_core<Fac>(
+        factory: Fac,
         system: &SystemRef,
         g_type: &ActorGuardianType,
         address: ActorWeakAddr<R>,
-    ) -> Result<(Arc<Self>, LopperTask<R>), ActorCoreCreationError> {
-        let (looper, mut looper_task) = ActorCore::create_looper();
+        pool_size: Option<usize>,
+    ) -> Result<(Arc<Self>, Vec<LopperTask<R>>, CoreExecutorType), ActorCoreCreationError>
+    where
+        R: ActorReceiver,
+        Fac: Fn() -> R + Send + Sync + 'static,
+    {
+        // initialize the looopers
+        let mut act_pool_size = 1;
+        if let Some(pool_size) = pool_size {
+            act_pool_size = pool_size;
+        }
+        let mut loopers_and_tasks = ActorCore::create_loopers(act_pool_size);
 
         // "guardian" will be None for other guardians as for a guardian the g_type is Root(dummy)
         let mut guardian = None;
@@ -150,30 +182,60 @@ impl<R: ActorReceiver> ActorCore<R> {
             guardian = Some(g.downgrade());
         }
 
-        let core = Arc::new_cyclic(|weak| {
-            let processor = Arc::new(Processor {
-                receiver: Arc::new(Mutex::new(Some(receiver))),
-                system: system.clone(),
-                core: weak.clone(),
-            });
+        // executor type
+        let mut executor = CoreExecutorType::Single;
+        // check if pool_size is Some. If it is Some even if pool_size == 1,
+        // we should create separate executor for the actor.
+        if let Some(pool_size) = pool_size {
+            let mut builder = ThreadPoolBuilder::new();
+            builder.name_prefix("actor_pool_executor_");
+            builder.pool_size(pool_size);
+            executor = CoreExecutorType::Pool(Arc::new(Box::new(builder.create().unwrap())));
+            // let it panic if error
+        }
 
-            looper_task.processor = Some(processor.clone());
+        let mut processors: Vec<Arc<Processor<R>>> = Vec::new();
+        let mut loopers: Vec<Looper<R>> = Vec::new();
+        let mut looper_tasks: Vec<LopperTask<R>> = Vec::new();
+        let core = Arc::new_cyclic(|weak| {
+            // create the corresponding processors for the loopers
+            for i in 0..act_pool_size {
+                let processor = Arc::new(Processor {
+                    receiver: Arc::new(Mutex::new(Some(factory()))),
+                    system: system.clone(),
+                    core: weak.clone(),
+                });
+
+                if let Some((looper, task)) = loopers_and_tasks.pop() {
+                    processors.push(processor.clone());
+                    loopers.push(looper);
+                    looper_tasks.push(task);
+                    looper_tasks[i].processor = Some(processor.clone());
+                } else {
+                    trace!("ActorCore_create_core_error: loopers size mismatch");
+                }
+            }
 
             ActorCore {
-                processor: processor.clone(),
-                looper,
+                executor: executor.clone(),
                 guardian,
                 address: Some(address),
+                processors,
+                loopers,
             }
         });
 
-        Ok((core, looper_task))
+        Ok((core, looper_tasks, executor))
     }
 
     pub(crate) fn send(&self, env: Envelope<R>) -> Result<(), MessageSendError> {
+        if self.loopers.len() < 1 {
+            return Err(MessageSendError);
+        }
         let mut result = Ok(());
 
-        match self.looper.tx_msg.send(Box::new(env)) {
+        // message queued only once, as all loopers share queue
+        match self.loopers[0].tx_msg.send(Box::new(env)) {
             Ok(()) => {}
             Err(e) => {
                 result = Err(MessageSendError);
@@ -181,19 +243,26 @@ impl<R: ActorReceiver> ActorCore<R> {
             }
         };
 
-        // schedule the mailbox to run. ??Handle multiple runs queued??
-        if let Err(e) = self.looper.tx_cmd.send(CoreCommand::Run) {
-            result = Err(MessageSendError);
-            trace!("ActorCore::send::error {}", e);
+        // schedule the pool mailboxes to run. ??Handle multiple runs queued??
+        for looper in &self.loopers {
+            if let Err(e) = looper.tx_cmd.send(CoreCommand::Run) {
+                result = Err(MessageSendError);
+                trace!("ActorCore::send::error {}", e);
+                break;
+            }
         }
 
         result
     }
 
     pub(crate) fn send_sys(&self, env: SystemEnvelope<R>) -> Result<(), MessageSendError> {
+        if self.loopers.len() < 1 {
+            return Err(MessageSendError);
+        }
         let mut result = Ok(());
 
-        match self.looper.tx_msg_sys.send(Box::new(env)) {
+        // message queued only once, as all loopers share queue
+        match self.loopers[0].tx_msg_sys.send(Box::new(env)) {
             Ok(()) => {}
             Err(e) => {
                 result = Err(MessageSendError);
@@ -201,20 +270,33 @@ impl<R: ActorReceiver> ActorCore<R> {
             }
         };
 
-        if let Err(e) = self.looper.tx_cmd.send(CoreCommand::Run) {
-            result = Err(MessageSendError);
-            trace!("ActorCore::send_sys::error {}", e);
+        for looper in &self.loopers {
+            if let Err(e) = looper.tx_cmd.send(CoreCommand::Run) {
+                result = Err(MessageSendError);
+                trace!("ActorCore::send_sys::error {}", e);
+                break;
+            }
         }
 
         result
     }
 
     pub(crate) fn schedule_mailbox(&self) {
-        let _ = self.looper.tx_cmd.send(CoreCommand::Run);
+        for looper in &self.loopers {
+            if let Err(e) = looper.tx_cmd.send(CoreCommand::Run) {
+                trace!("schedule_mailbox_error {}", e);
+                break;
+            }
+        }
     }
 
     pub(crate) fn set_pause(&self, b: bool) {
-        let _ = self.looper.tx_cmd.send(CoreCommand::Pause(b));
+        for looper in &self.loopers {
+            if let Err(e) = looper.tx_cmd.send(CoreCommand::Pause(b)) {
+                trace!("set_pause_error {}", e);
+                break;
+            }
+        }
     }
 
     pub(crate) fn address(&self) -> Option<ActorWeakAddr<R>> {
@@ -229,8 +311,11 @@ impl<R: ActorReceiver> ActorCore<R> {
             if let Some(g) = g_ref.upgrade() {
                 if let Some(weak_ref) = &self.address {
                     if let Some(addr) = weak_ref.upgrade() {
-                        if let Err(e) = self.looper.tx_cmd.send(CoreCommand::Terminate) {
-                            trace!("ActorCore::stop::error {}", e);
+                        for looper in &self.loopers {
+                            if let Err(e) = looper.tx_cmd.send(CoreCommand::Terminate) {
+                                trace!("ActorCore::stop::error {}", e);
+                                break;
+                            }
                         }
 
                         let msg = SystemMessage::Event(SystemEvent::ActorTerminated(Addr(

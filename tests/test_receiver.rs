@@ -43,7 +43,7 @@ impl MessageHandler<MessageSubtract> for OpsReceiver {
 #[tokio::test]
 async fn test_receiver() {
     let sys = factor::init_system(Some("TestSystem".to_string()));
-    let spawn_item = builder::ActorBuilder::create(OpsReceiver {}, &sys);
+    let spawn_item = builder::ActorBuilder::create(|| OpsReceiver {}, &sys);
     let addr = sys.run_actor(spawn_item.unwrap());
 
     // 0 + 3

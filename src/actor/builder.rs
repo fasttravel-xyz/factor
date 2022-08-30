@@ -2,7 +2,7 @@ use log::trace;
 use std::sync::Arc;
 
 use crate::actor::{
-    core::{ActorCore, LopperTask},
+    core::{ActorCore, CoreExecutorType, LopperTask},
     receiver::{ActorReceiver, FnHandlerContext, FunctionHandler},
     ActorAddr, ActorAddrInner, ActorId, ActorWeakAddr,
 };
@@ -11,8 +11,9 @@ use crate::system::{guardian::ActorGuardianType, SystemRef};
 
 // ActorSpawnItem
 pub struct ActorSpawnItem<R: ActorReceiver> {
+    pub(crate) executor: CoreExecutorType,
     pub(crate) address: ActorAddr<R>,
-    pub(crate) looper_task: LopperTask<R>,
+    pub(crate) looper_tasks: Vec<LopperTask<R>>,
 }
 
 /// ActorBuilder provides actor creation functionality.
@@ -22,13 +23,41 @@ pub struct ActorBuilder;
 
 impl ActorBuilder {
     /// Create user actor with the provided receiver.
-    pub fn create<R: ActorReceiver>(receiver: R, system: &SystemRef) -> Option<ActorSpawnItem<R>> {
-        match Self::create_actor(receiver, &ActorGuardianType::User, system) {
+    pub fn create<R, Fac>(factory: Fac, system: &SystemRef) -> Option<ActorSpawnItem<R>>
+    where
+        R: ActorReceiver,
+        Fac: Fn() -> R + Send + Sync + 'static,
+    {
+        match Self::create_actor(factory, &ActorGuardianType::User, system, None) {
             Ok(item) => Some(item),
             Err(e) => {
                 trace!("ActorBuilder_create_error {:?}", e);
                 None
             }
+        }
+    }
+
+    /// Create user actor-pool for CPU bound computation services with the provided factory.
+    pub fn create_pool<R, Fac>(
+        factory: Fac,
+        system: &SystemRef,
+        pool_size: usize,
+    ) -> Option<ActorSpawnItem<R>>
+    where
+        R: ActorReceiver,
+        Fac: Fn() -> R + Send + Sync + 'static,
+    {
+        if pool_size > 0 {
+            match Self::create_actor(factory, &ActorGuardianType::User, system, Some(pool_size)) {
+                Ok(item) => Some(item),
+                Err(e) => {
+                    trace!("ActorBuilder_create_pool_error {:?}", e);
+                    None
+                }
+            }
+        } else {
+            trace!("ActorBuilder_create_pool_error: pool_size less than one");
+            None
         }
     }
 
@@ -38,11 +67,11 @@ impl ActorBuilder {
         system: &SystemRef,
     ) -> Option<ActorSpawnItem<FunctionHandler<F, M>>>
     where
-        F: (Fn(M, &mut FnHandlerContext) -> M::Result) + Send + Sync + 'static,
+        F: (Fn(M, &mut FnHandlerContext) -> M::Result) + Send + Sync + 'static + Clone,
         M: Message + Send + 'static,
     {
-        let receiver = FunctionHandler::new(f);
-        match Self::create_actor(receiver, &ActorGuardianType::User, system) {
+        let factory = move || FunctionHandler::new(f.clone());
+        match Self::create_actor(factory, &ActorGuardianType::User, system, None) {
             Ok(item) => Some(item),
             Err(e) => {
                 trace!("ActorBuilder_create_error {:?}", e);
@@ -53,15 +82,20 @@ impl ActorBuilder {
 
     /// Internal helper function to create the actor.
     fn create_cyclic<R: ActorReceiver, F>(
-        task: &mut LopperTask<R>,
+        tasks: &mut Vec<LopperTask<R>>,
+        executor: &mut CoreExecutorType,
         data_fn: F,
     ) -> Arc<ActorAddrInner<R>>
     where
-        F: FnOnce(&ActorWeakAddr<R>, &mut LopperTask<R>) -> ActorAddrInner<R>,
+        F: FnOnce(
+            &ActorWeakAddr<R>,
+            &mut Vec<LopperTask<R>>,
+            &mut CoreExecutorType,
+        ) -> ActorAddrInner<R>,
     {
         let inner = Arc::new_cyclic(|weak_inner| {
             let weak_ref = ActorWeakAddr::new(weak_inner.clone());
-            data_fn(&weak_ref, task)
+            data_fn(&weak_ref, tasks, executor)
         });
 
         inner
@@ -69,31 +103,42 @@ impl ActorBuilder {
 
     /// Create an actor with the provides receiver and supervised by the
     /// provided guardian type.
-    pub(crate) fn create_actor<R: ActorReceiver>(
-        receiver: R,
+    pub(crate) fn create_actor<R, Fac>(
+        factory: Fac,
         g_type: &ActorGuardianType,
         system: &SystemRef,
-    ) -> Result<ActorSpawnItem<R>, ActorCreationError> {
-        let mut looper_task = LopperTask::default();
+        pool_size: Option<usize>,
+    ) -> Result<ActorSpawnItem<R>, ActorCreationError>
+    where
+        R: ActorReceiver,
+        Fac: Fn() -> R + Send + Sync + 'static,
+    {
+        let mut looper_tasks: Vec<LopperTask<R>> = Vec::new();
+        let mut executor_type: CoreExecutorType = CoreExecutorType::Single;
 
         // [todo] add a check that g_type is not Remote.
-        let inner = Self::create_cyclic(&mut looper_task, |weak_ref, task| {
-            let mut id = None;
-            let mut sender = None;
+        let inner = Self::create_cyclic(
+            &mut looper_tasks,
+            &mut executor_type,
+            |weak_ref, tasks, executor| {
+                let mut id = None;
+                let mut sender = None;
 
-            if let Ok((core, t)) =
-                ActorCore::create_core(receiver, system, g_type, weak_ref.clone())
-            {
-                sender = Some(MessageSender::LocalSender { core });
-                *task = t;
-            }
+                if let Ok((core, ts, exec)) =
+                    ActorCore::create_core(factory, system, g_type, weak_ref.clone(), pool_size)
+                {
+                    sender = Some(MessageSender::LocalSender { core });
+                    *tasks = ts;
+                    *executor = exec;
+                }
 
-            if let Ok(aid) = ActorId::generate(system.get_id().clone(), g_type.clone()) {
-                id = Some(aid);
-            }
+                if let Ok(aid) = ActorId::generate(system.get_id().clone(), g_type.clone()) {
+                    id = Some(aid);
+                }
 
-            ActorAddrInner { id, sender }
-        });
+                ActorAddrInner { id, sender }
+            },
+        );
 
         if inner.id.is_none() {
             return Err(ActorCreationError::IdGenerationError); // this error has preference
@@ -103,8 +148,9 @@ impl ActorBuilder {
 
         let address = ActorAddr::new(inner);
         Ok(ActorSpawnItem {
+            executor: executor_type,
             address,
-            looper_task,
+            looper_tasks,
         })
     }
 }

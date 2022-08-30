@@ -14,6 +14,7 @@ use std::{
 
 use crate::actor::{
     builder::ActorSpawnItem,
+    core::CoreExecutorType,
     receiver::{ActorReceiver, BasicContext},
     ActorAddr, Addr,
 };
@@ -196,11 +197,35 @@ impl ActorSystem {
     where
         R: ActorReceiver<Context = BasicContext<R>>,
     {
-        self.spawn_ok(item.looper_task.get_future());
-        <BoxedActorGuardian as Supervisor>::add_actor(
-            self.guardians.user.as_ref(),
-            item.address.clone(),
-        );
+        let mut item = item;
+        match item.executor {
+            CoreExecutorType::Single => {
+                if item.looper_tasks.len() == 1 {
+                    if let Some(task) = item.looper_tasks.pop() {
+                        self.spawn_ok(task.get_future());
+                        <BoxedActorGuardian as Supervisor>::add_actor(
+                            self.guardians.user.as_ref(),
+                            item.address.clone(),
+                        );
+                    }
+                } else {
+                    trace!("ActorCore_CoreExecutorType_Single_error: more than one looper");
+                }
+            }
+            CoreExecutorType::Pool(executor) => {
+                if item.looper_tasks.len() > 1 {
+                    for task in item.looper_tasks {
+                        executor.spawn_ok(task.get_future());
+                    }
+                    <BoxedActorGuardian as Supervisor>::add_actor(
+                        self.guardians.user.as_ref(),
+                        item.address.clone(),
+                    );
+                } else {
+                    trace!("ActorCore_CoreExecutorType_Pool_error: less than two looper");
+                }
+            }
+        }
 
         // [todo] should we wait here before returning the address??
         if let Err(e) = item

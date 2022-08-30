@@ -223,10 +223,11 @@ impl MessageHandler<MessageHeader<HandshakeClient>> for HandshakeServer {
 async fn test_handshake() {
     let sys = factor::init_system(Some("TestSystem".to_string()));
 
-    let srv_spawn = builder::ActorBuilder::create(HandshakeServer {}, &sys);
+    let srv_spawn = builder::ActorBuilder::create(|| HandshakeServer {}, &sys);
     let server = sys.run_actor(srv_spawn.unwrap());
 
-    let cl_spawn = builder::ActorBuilder::create(HandshakeClient::new(server.clone()), &sys);
+    let cl_spawn =
+        builder::ActorBuilder::create(move || HandshakeClient::new(server.clone()), &sys);
     let _client = sys.run_actor(cl_spawn.unwrap());
 
     std::thread::sleep(std::time::Duration::from_millis(1000));

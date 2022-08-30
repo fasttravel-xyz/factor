@@ -47,7 +47,7 @@ impl MessageHandler<Operation> for OperationActor {
 
 fn main() {
     let sys = factor::init_system(Some("LocalSystem".to_string()));
-    let spawn_item = builder::ActorBuilder::create(OperationActor::default(), &sys);
+    let spawn_item = builder::ActorBuilder::create(|| OperationActor::default(), &sys);
     let addr = sys.run_actor(spawn_item.unwrap());
 
     // additions

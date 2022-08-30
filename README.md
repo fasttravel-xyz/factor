@@ -17,6 +17,7 @@
 * Concurrency using `futures::executor::ThreadPool`.
 * Quick `LocalPool` access to wait for multiple quick-tasks completion.
 * Unbounded channels for messages (this might change.)
+* Actor-pool for running a CPU bound computation service on multiple actors and threads.
 * Simple functional message handlers.
 * Async response.
 * Granular locks when possible.
@@ -148,6 +149,7 @@ For examples refer to the [tests] directory:
 * [tell-ask test]
 * [handshake test]
 * [init-stop test]
+* [actor-pool test]
 
 More examples will be added to the [examples] directory after v0.1.0 release.
 
@@ -156,6 +158,7 @@ More examples will be added to the [examples] directory after v0.1.0 release.
 [tell-ask test]: https://github.com/fasttravel-xyz/factor/blob/0.0.1-dev0/tests/test_ask.rs
 [handshake test]: https://github.com/fasttravel-xyz/factor/blob/0.0.1-dev0/tests/test_handshake.rs
 [init-stop test]: https://github.com/fasttravel-xyz/factor/blob/0.0.1-dev0/tests/test_init_stop.rs
+[actor-pool test]: https://github.com/fasttravel-xyz/factor/blob/0.0.1-dev0/tests/test_actor_pool.rs
 
 ```sh
 # run all the tests:

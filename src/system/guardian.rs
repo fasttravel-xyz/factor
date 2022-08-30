@@ -116,8 +116,8 @@ impl ActorGuardian {
                 ActorGuardian::Remote(_inner) => _g_type = ActorGuardianType::Remote,
             }
 
-            let receiver = GuardianReceiver(handle);
-            match ActorBuilder::create_actor(receiver, &_g_type, &system) {
+            let factory = move || GuardianReceiver(handle.clone());
+            match ActorBuilder::create_actor(factory, &_g_type, &system, None) {
                 Ok(spawn_item) => {
                     let delegate = system.run_actor(spawn_item);
                     let mut data = self.inner().delegate.write();
