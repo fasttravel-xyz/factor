@@ -52,7 +52,7 @@ pub use message::{
         MessageHandler, MessageResponse, MessageResponseType, ReplyTo, ReplyToRef, ResponseFuture,
         ResponseResult,
     },
-    Message,
+    Message, MessageSendError,
 };
 pub use system::{
     ActorState, ActorSystemCofig, SystemCommand, SystemEvent, SystemMessage, SystemRef,
@@ -76,7 +76,7 @@ pub mod prelude {
         },
         message::{
             handler::{MessageHandler, MessageResponseType, ResponseResult},
-            Message,
+            Message, MessageSendError,
         },
         system::{ActorSystem, SystemCommand, SystemMessage, SystemRef},
     };
