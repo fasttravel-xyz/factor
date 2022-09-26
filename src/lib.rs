@@ -17,6 +17,7 @@
 //! - Concurrency using futures::executor::ThreadPool.
 //! - Quick LocalPool access to wait for multiple quick-tasks completion.
 //! - Unbounded channels for messages (this might change.)
+//! - Actor-pool for running a CPU bound computation service on multiple actors and threads.
 //! - Simple functional message handlers.
 //! - Async response.
 //! - Granular locks when possible.

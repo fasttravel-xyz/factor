@@ -131,8 +131,10 @@ impl HandshakeClient {
         syn_msg.syn_seq = SYN_SEQ_RANDOM_A;
         syn_msg.set_mask(true, &Mask::SYN);
 
-        if let Ok(result) = server.ask(syn_msg) {
-            if let Ok(response) = result.await {
+        server
+            .ask(syn_msg)
+            .await
+            .map(|response| {
                 ASSERT_SYN_ACK_HDR_SEQ_ACK.store(response.msg.ack_seq, Ordering::SeqCst);
                 // assert_eq!(response.msg.ack_seq, SYN_SEQ_RANDOM_A + 1);
 
@@ -147,8 +149,9 @@ impl HandshakeClient {
                         let _ = tx.send(ack_msg);
                     }
                 }
-            }
-        }
+            })
+            .map_err(|e| panic!("server_ask_error: {:?}", e))
+            .err();
     }
 }
 

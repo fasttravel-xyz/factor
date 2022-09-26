@@ -81,49 +81,50 @@ async fn test_ask() {
     let addr = sys.run_actor(spawn_item.unwrap());
 
     // 0 + 3
-    let mut result = addr.ask(MessageAdd(3));
-    assert!(result.is_ok());
-    if let Ok(r) = result.unwrap().await {
-        assert_eq!(r, 3);
-    }
+    addr.ask(MessageAdd(3))
+        .await
+        .map(|sum| assert_eq!(sum, 3))
+        .map_err(|e| panic!("factor_ask_error: {:?} ", e))
+        .err();
 
     // 0 + 3 + 13
-    result = addr.ask(MessageAdd(13));
-    assert!(result.is_ok());
-    if let Ok(r) = result.unwrap().await {
-        assert_eq!(r, 16);
-    }
+    addr.ask(MessageAdd(13))
+        .await
+        .map(|sum| assert_eq!(sum, 16))
+        .map_err(|e| panic!("factor_ask_error: {:?} ", e))
+        .err();
 
     // 0 + 3 + 13 - 5
-    result = addr.ask(MessageSubtract(5));
-    assert!(result.is_ok());
-    if let Ok(r) = result.unwrap().await {
-        assert_eq!(r, 11);
-    }
+    addr.ask(MessageSubtract(5))
+        .await
+        .map(|sum| assert_eq!(sum, 11))
+        .map_err(|e| panic!("factor_ask_error: {:?} ", e))
+        .err();
 
     // 0 + 3 + 13 - 5 - 6
-    result = addr.ask(MessageSubtract(6));
-    assert!(result.is_ok());
-    if let Ok(r) = result.unwrap().await {
-        assert_eq!(r, 5);
-    }
+    addr.ask(MessageSubtract(6))
+        .await
+        .map(|sum| assert_eq!(sum, 5))
+        .map_err(|e| panic!("factor_ask_error: {:?} ", e))
+        .err();
 
     // 0 + 3 + 13 - 5 - 6 + 3 = 8
-    result = addr.ask(MessageAdd(3));
-    assert!(result.is_ok());
-    if let Ok(r) = result.unwrap().await {
-        assert_eq!(r, 8);
-    }
+    addr.ask(MessageAdd(3))
+        .await
+        .map(|sum| assert_eq!(sum, 8))
+        .map_err(|e| panic!("factor_ask_error: {:?} ", e))
+        .err();
 
-    let mut rcount = addr.ask(MessageAddCount);
-    assert!(rcount.is_ok());
-    if let Ok(count) = rcount.unwrap().await {
-        assert_eq!(count, 3);
-    }
+    addr.ask(MessageAddCount)
+        .await
+        .map(|count| assert_eq!(count, 3))
+        .map_err(|e| panic!("factor_ask_error: {:?} ", e))
+        .err();
 
-    rcount = addr.ask(MessageSubCount);
-    assert!(rcount.is_ok());
-    if let Ok(count) = rcount.unwrap().await {
-        assert_eq!(count, 2);
-    }
+    addr.ask(MessageSubCount)
+        .await
+        .map(|count| assert_eq!(count, 2))
+        .map_err(|e| panic!("factor_ask_error: {:?} ", e))
+        .err();
+
 }

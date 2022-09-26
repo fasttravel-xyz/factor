@@ -3,9 +3,9 @@ pub(crate) mod core;
 pub(crate) mod mailbox;
 pub mod receiver;
 
-use futures::channel::oneshot;
 use serde::{de::Deserializer, ser::Serializer, Deserialize, Serialize};
 use std::sync::{Arc, Weak};
+use async_trait::async_trait;
 
 use crate::actor::receiver::ActorReceiver;
 use crate::common;
@@ -100,14 +100,15 @@ pub trait Address: common::AsAny {
     fn boxed(&self) -> Box<dyn Address + Sync + Send>;
     fn get_actor_id(&self) -> &ActorId;
     fn tell_sys_msg(&self, msg: SystemMessage) -> Result<(), MessageSendError>;
-    // fn try_tell_any_msg(&self, msg: AnyMessage); // todo
+    // fn try_tell_any_msg(&self, msg: AnyMessage); // [todo] low-priority
 }
 
 /// Basic trait for exposing interface to send a message of specific type.
+#[async_trait]
 pub trait ActorMessageReceiver<M: Message + Send + 'static> {
     fn boxed(&self) -> Box<dyn ActorMessageReceiver<M> + Send + Sync>;
     fn tell_msg(&self, msg: M) -> Result<(), MessageSendError>;
-    fn ask_msg(&self, msg: M) -> Result<oneshot::Receiver<M::Result>, MessageSendError>;
+    async fn ask_msg(&self, msg: M) -> Result<M::Result, MessageSendError>;
 }
 
 impl<R: ActorReceiver> Address for ActorAddr<R> {
@@ -156,6 +157,7 @@ impl Clone for Addr {
     }
 }
 
+#[async_trait]
 impl<M: Message + Send, R: ActorReceiver> ActorMessageReceiver<M> for ActorAddr<R>
 where
     M: Message + Send + 'static,
@@ -170,8 +172,8 @@ where
         self.tell(msg)
     }
 
-    fn ask_msg(&self, msg: M) -> Result<oneshot::Receiver<M::Result>, MessageSendError> {
-        self.ask(msg)
+    async fn ask_msg(&self, msg: M) -> Result<M::Result, MessageSendError> {
+        self.ask(msg).await
     }
 }
 
@@ -184,8 +186,8 @@ where
         self.0.tell_msg(msg)
     }
 
-    pub fn ask(&self, msg: M) -> Result<oneshot::Receiver<M::Result>, MessageSendError> {
-        self.0.ask_msg(msg)
+    pub async fn ask(&self, msg: M) -> Result<M::Result, MessageSendError> {
+        self.0.ask_msg(msg).await
     }
 }
 
@@ -296,14 +298,20 @@ impl<R: ActorReceiver> ActorAddr<R> {
     }
 
     /// Send a message and receive a response from the actor.
-    pub fn ask<M>(&self, msg: M) -> Result<oneshot::Receiver<M::Result>, MessageSendError>
+    pub async fn ask<M>(&self, msg: M) -> Result<M::Result, MessageSendError>
     where
         M: Message + Send + 'static,
         M::Result: Send,
         R: MessageHandler<M>,
     {
         if let Some(sender) = &self.0.sender {
-            sender.ask(msg)
+            match sender.ask(msg) {
+                Ok(oneshot_rx) => {
+                    oneshot_rx.await
+                        .map_err(|e| e.into())
+                },
+                Err(e) => Err(e),
+            }            
         } else {
             Err(MessageSendError)
         }

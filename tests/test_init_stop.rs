@@ -23,7 +23,7 @@ impl Message for MessageCount {
     type Result = u8;
 }
 
-struct MessageInItStr {}
+struct MessageInItStr();
 impl Message for MessageInItStr {
     type Result = String;
 }
@@ -103,38 +103,33 @@ async fn test_init_stop() {
 
     let mut spawn_item = builder::ActorBuilder::create(|| OpsReceiver::default(), &sys);
     let addr_a = sys.run_actor(spawn_item.unwrap());
-    let result = addr_a.ask(MessageInItStr {});
-    assert!(result.is_ok());
-    if let Ok(msg) = result.unwrap().await {
-        assert_eq!(msg, INIT_MSG);
-    }
+    addr_a.ask(MessageInItStr()).await
+        .map(|msg| assert_eq!(msg, INIT_MSG) )
+        .map_err(|e| panic!("ask_init_msg_error: {:?}", e))
+        .err();
+
 
     spawn_item = builder::ActorBuilder::create(|| OpsReceiver::default(), &sys);
     let addr_b = sys.run_actor(spawn_item.unwrap());
 
     // loop 5 times
     for _ in 0..5 {
-        let mut result = addr_a.tell(MessageAdd(5));
-        assert!(result.is_ok());
-
-        result = addr_b.tell(MessageSub(3));
-        assert!(result.is_ok());
+        addr_a.tell(MessageAdd(5)).expect("tell_add_error");
+        addr_b.tell(MessageSub(3)).expect("tell_sub_error");
     }
 
-    let mut op_result = addr_a.ask(MessageCount::Add);
-    assert!(op_result.is_ok());
-    if let Ok(count) = op_result.unwrap().await {
-        assert_eq!(count, 5);
-    }
+    addr_a.ask(MessageCount::Add).await
+        .map(|count| assert_eq!(count, 5) )
+        .map_err(|e| panic!("ask_add_error: {:?}", e))
+        .err();
 
-    op_result = addr_a.ask(MessageCount::Sub);
-    assert!(op_result.is_ok());
-    if let Ok(count) = op_result.unwrap().await {
-        assert_eq!(count, 0);
-    }
+    addr_a.ask(MessageCount::Sub).await
+        .map(|count| assert_eq!(count, 0) )
+        .map_err(|e| panic!("ask_sub_error: {:?}", e))
+        .err();
 
-    let r = addr_b.tell_sys(SystemMessage::Command(SystemCommand::ActorStop));
-    assert!(r.is_ok());
+    addr_b.tell_sys(SystemMessage::Command(SystemCommand::ActorStop))
+        .expect("sys_cmd_actor_stop_error");
 
     // We could add a SystemCommand::MailboxFlush to flush all the user
     // messages and wait on that command. But flushing the mailbox is no
@@ -147,8 +142,8 @@ async fn test_init_stop() {
     // does not complete within a set time interval.
     std::thread::sleep(std::time::Duration::from_millis(3000));
 
-    op_result = addr_b.ask(MessageCount::Add);
-    assert!(op_result.is_err());
+    addr_b.ask(MessageCount::Add).await
+        .expect_err("ask_after_stop_error");
 
     assert_eq!(SUM.load(Ordering::SeqCst), 10);
     assert_eq!(SUB_CALL_COUNT.load(Ordering::SeqCst), 5);

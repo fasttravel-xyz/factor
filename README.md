@@ -90,55 +90,58 @@ impl MessageHandler<Operation> for OperationActor {
 
 fn main() {
     let sys = factor::init_system(Some("LocalSystem".to_string()));
-    let spawn_item = ActorBuilder::create(OperationActor::default(), &sys);
+    let spawn_item = builder::ActorBuilder::create(|| OperationActor::default(), &sys);
     let addr = sys.run_actor(spawn_item.unwrap());
 
-    // additions
-    for i in 1..1000 {
-        if let Ok(fut) = addr.ask(Operation::Add(i)) {
-            let t = {
-                async {
-                    let _ = fut.await;
-                }
-            };
-            if let Err(e) = factor::local_spawn(t) {
-                print!("factor_local_spawn_error: {:?} ", e)
-            }
+    // perform additions synchronously by awaiting.
+    let addr_moved = addr.clone();
+    let add_ops = async move {
+        for i in 1..1000 {
+            addr_moved
+                .ask(Operation::Add(i))
+                .await
+                .map_err(|e| print!("factor_ask_error: {:?} ", e))
+                .err();
         }
-    }
-    // subtractions
+    };
+
+    factor::local_spawn(add_ops)
+        .map_err(|e| print!("factor_local_spawn_error: {:?} ", e))
+        .err();
+
+    // perform subtractions asynchronously.
     for i in 501..1000 {
-        if let Ok(fut) = addr.ask(Operation::Sub(i)) {
-            let t = {
-                async {
-                    let _ = fut.await;
-                }
-            };
-            if let Err(e) = factor::local_spawn(t) {
-                print!("factor_local_spawn_error: {:?} ", e)
-            }
-        }
+        let addr_moved = addr.clone();
+        let sub_op = async move {
+            addr_moved
+                .ask(Operation::Sub(i))
+                .await
+                .map_err(|e| print!("factor_ask_error: {:?} ", e))
+                .err();
+        };
+        factor::local_spawn(sub_op)
+            .map_err(|e| print!("factor_local_spawn_error: {:?} ", e))
+            .err();
     }
 
     // run all tasks to completion
     factor::local_run();
 
-    if let Ok(fut) = addr.ask(Operation::Sum) {
-        let t = {
-            async {
-                match fut.await {
-                    Ok(sum) => {
-                        println!("Received Sum: {}. Expected Sum: {}", sum, 125250);
-                        assert_eq!(sum, 125250);
-                    }
-                    Err(e) => {
-                        println!("error_in_ask_operation_sum: {:?}", e);
-                    }
-                }
-            }
-        };
-        let _ = factor::local_spawn(t);
-    }
+    // check results
+    let check_op = async move {
+        addr.ask(Operation::Sum)
+            .await
+            .map(|sum| {
+                println!("Received Sum: {}. Expected Sum: {}", sum, 125250);
+                assert_eq!(sum, 125250);
+            })
+            .map_err(|e| println!("error_in_ask_operation_sum: {:?}", e))
+            .err();
+    };
+    
+    factor::local_spawn(check_op)
+        .map_err(|e| print!("factor_local_spawn_error: {:?} ", e))
+        .err();
 
     factor::local_run();
 }

@@ -119,3 +119,9 @@ where
 /// Message Sender Error.
 #[derive(Debug)]
 pub struct MessageSendError;
+// [todo]: string error messages as payloads.
+impl From<oneshot::Canceled> for MessageSendError {
+    fn from(_error: oneshot::Canceled) -> Self {
+        MessageSendError
+    }
+}

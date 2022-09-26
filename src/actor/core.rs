@@ -45,7 +45,7 @@ pub(crate) enum CoreExecutorType {
 
 #[allow(dead_code)]
 pub(crate) struct ActorCore<R: ActorReceiver> {
-    executor: CoreExecutorType,
+    executor: CoreExecutorType, // [todo] for pool pass this executor to handler-context as well
     guardian: Option<GuardianWeakRef>,
     address: Option<ActorWeakAddr<R>>,
     processors: Vec<Arc<Processor<R>>>, // index aligned with loopers

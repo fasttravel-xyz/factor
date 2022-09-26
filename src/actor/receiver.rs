@@ -64,6 +64,7 @@ pub struct BasicContext<R: ActorReceiver> {
     system: SystemRef,
     address: ActorWeakAddr<R>,
     core: Weak<ActorCore<R>>,
+    // [todo]: store the core-executor
 }
 
 impl<R: ActorReceiver> ActorReceiverContextPrivate<R> for BasicContext<R> {
@@ -81,6 +82,7 @@ impl<R: ActorReceiver> ActorReceiverContext<R> for BasicContext<R> {
     where
         Fut: 'static + Future<Output = ()> + Send,
     {
+        // [todo] spawn on the correct executor for actor-pool
         self.system.spawn_ok(task);
     }
 
