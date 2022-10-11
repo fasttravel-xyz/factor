@@ -5,19 +5,19 @@
 //! threads and tasks of same actor may be executing in different threads.
 //!
 //! ## factor provides:
-//!     - `Typed` messages.
-//!     - `Ask` and `Tell` patterns.
-//!     - Uses `futures` for asynchronous message handling.
-//!     - Concurrency using `futures::executor::ThreadPool`.
-//!     - Unbounded channels for messages (this might change.)
-//!     - `ActorPool` for running a CPU bound computation service on multiple dedicated threads.
-//!     - Async response.
-//!     - Granular locks when possible.
-//!     - Runs on stable Rust 1.60+
-//!     - `Ipc-cluster` with remote ipc-nodes.
-//!     - Task and Message Scheduling with `schedule_once`, `schedule_once_at`, and `schedule_repeat`.
-//!     - Quick `LocalPool` access.
-//!     - Simple functional message handlers `[experimental.may.get.removed]`.
+//! - "Typed" messages.
+//! - "Ask" and "Tell" patterns.
+//! - Uses "futures" for asynchronous message handling.
+//! - Concurrency using "futures::executor::ThreadPool".
+//! - Unbounded channels for messages (this might change.)
+//! - "ActorPool" for running a CPU bound computation service on multiple dedicated threads.
+//! - Async response.
+//! - Granular locks when possible.
+//! - Runs on stable Rust 1.60+
+//! - "Ipc-cluster" with remote ipc-nodes.
+//! - Task and Message Scheduling with "schedule_once", "schedule_once_at", and "schedule_repeat".
+//! - Quick "LocalPool" access.
+//! - Simple functional message handlers "[experimental.may.get.removed]".
 //!
 
 #![deny(unreachable_pub, private_in_public)]
