@@ -1,20 +1,26 @@
-use factor::prelude::*;
+use factor::{builder::ActorBuilderConfig, prelude::*};
 use std::sync::atomic::{AtomicI8, AtomicU8, Ordering};
 
 static SUM: AtomicI8 = AtomicI8::new(0);
 static SUB_CALL_COUNT: AtomicU8 = AtomicU8::new(0);
 static INIT_MSG: &str = "init finalized";
 
+#[cfg(all(unix, feature = "ipc-cluster"))]
+use serde::{Deserialize, Serialize};
+
+#[cfg_attr(all(unix, feature = "ipc-cluster"), derive(Serialize, Deserialize))]
 struct MessageAdd(i8);
 impl Message for MessageAdd {
     type Result = i8;
 }
 
+#[cfg_attr(all(unix, feature = "ipc-cluster"), derive(Serialize, Deserialize))]
 struct MessageSub(i8);
 impl Message for MessageSub {
     type Result = i8;
 }
 
+#[cfg_attr(all(unix, feature = "ipc-cluster"), derive(Serialize, Deserialize))]
 enum MessageCount {
     Add,
     Sub,
@@ -23,6 +29,7 @@ impl Message for MessageCount {
     type Result = u8;
 }
 
+#[cfg_attr(all(unix, feature = "ipc-cluster"), derive(Serialize, Deserialize))]
 struct MessageInItStr();
 impl Message for MessageInItStr {
     type Result = String;
@@ -101,15 +108,24 @@ impl MessageHandler<MessageInItStr> for OpsReceiver {
 async fn test_init_stop() {
     let sys = factor::init_system(Some("TestSystem".to_string()));
 
-    let mut spawn_item = builder::ActorBuilder::create(|| OpsReceiver::default(), &sys);
+    let mut spawn_item = builder::ActorBuilder::create(
+        || OpsReceiver::default(),
+        &sys,
+        ActorBuilderConfig::default(),
+    );
     let addr_a = sys.run_actor(spawn_item.unwrap());
-    addr_a.ask(MessageInItStr()).await
-        .map(|msg| assert_eq!(msg, INIT_MSG) )
+    addr_a
+        .ask(MessageInItStr())
+        .await
+        .map(|msg| assert_eq!(msg, INIT_MSG))
         .map_err(|e| panic!("ask_init_msg_error: {:?}", e))
         .err();
 
-
-    spawn_item = builder::ActorBuilder::create(|| OpsReceiver::default(), &sys);
+    spawn_item = builder::ActorBuilder::create(
+        || OpsReceiver::default(),
+        &sys,
+        ActorBuilderConfig::default(),
+    );
     let addr_b = sys.run_actor(spawn_item.unwrap());
 
     // loop 5 times
@@ -118,17 +134,22 @@ async fn test_init_stop() {
         addr_b.tell(MessageSub(3)).expect("tell_sub_error");
     }
 
-    addr_a.ask(MessageCount::Add).await
-        .map(|count| assert_eq!(count, 5) )
+    addr_a
+        .ask(MessageCount::Add)
+        .await
+        .map(|count| assert_eq!(count, 5))
         .map_err(|e| panic!("ask_add_error: {:?}", e))
         .err();
 
-    addr_a.ask(MessageCount::Sub).await
-        .map(|count| assert_eq!(count, 0) )
+    addr_a
+        .ask(MessageCount::Sub)
+        .await
+        .map(|count| assert_eq!(count, 0))
         .map_err(|e| panic!("ask_sub_error: {:?}", e))
         .err();
 
-    addr_b.tell_sys(SystemMessage::Command(SystemCommand::ActorStop))
+    addr_b
+        .tell_sys(SystemMessage::Command(SystemCommand::ActorStop))
         .expect("sys_cmd_actor_stop_error");
 
     // We could add a SystemCommand::MailboxFlush to flush all the user
@@ -142,7 +163,9 @@ async fn test_init_stop() {
     // does not complete within a set time interval.
     std::thread::sleep(std::time::Duration::from_millis(3000));
 
-    addr_b.ask(MessageCount::Add).await
+    addr_b
+        .ask(MessageCount::Add)
+        .await
         .expect_err("ask_after_stop_error");
 
     assert_eq!(SUM.load(Ordering::SeqCst), 10);

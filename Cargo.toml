@@ -8,17 +8,39 @@ publish = false
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-log = "0.4.17"
+log = { version = "0.4.17" }
 futures = { version = "0.3.21", features = ["executor", "thread-pool"] }
-flume = "0.10.10"
-dashmap = "5.3.4"
-parking_lot = "0.12.1"
-serde = { version = "1.0.143", features = ["derive"] }
+flume = { version = "0.10.10" }
+dashmap = { version = "5.3.4" }
+parking_lot = { version = "0.12.1" }
+serde = { version = "1.0", features = ["derive"] }
 uuid = { version = "0.8", features = ["serde", "v4"]}
 async-trait = { version = "0.1.57" }
+once_cell = { version = "1.14" }
+chrono = { version = "0.4.22" }
+clap = { version = "4.0", features = ["derive"] }
+
+# optional dependencies
+tarpc = { version = "0.30.0", optional = true, features = ["serde1", "serde-transport", "serde-transport-json"] }
+serde_json = { version = "1.0", optional = true }
+tokio = { version = "1.21", optional = true, features = ["rt-multi-thread"] }
+
 
 [dev-dependencies]
-tokio = { version = "1.20.1", features = ["macros", "rt", "rt-multi-thread" ] }
+tokio = { version = "1.21", features = ["macros", "rt-multi-thread" ] }
 
+#
+# factor by default uses futures::executor::ThreadPool as the executor for 
+# the system and actorpools. The "threadpool-tokio" feature allows to use 
+# tokio threadpool as the executor instead of the default ThreadPool, the 
+# tokio threadpool doesn't start the IO and Timer drivers.
+# 
+# The "ipc-cluster" feature has dependency on tokio IO driver for ipc-messaging,
+# this is different from the system/actorpool executor. Even in the ipc-cluster 
+# configuration users have the option to use the default or tokio threadpool 
+# as the executor for the system/actorpools.
+#
 [features]
-debug-log = []
+default = []
+threadpool-tokio = ["tokio"]
+ipc-cluster = ["dep:tarpc", "dep:serde_json", "tokio/net"]

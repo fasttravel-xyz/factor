@@ -5,16 +5,16 @@ use serde::{Deserialize, Serialize};
 use std::sync::{Arc, Weak};
 
 use crate::actor::{
-    builder::ActorBuilder,
+    builder::{ActorBuilder, ActorBuilderConfig},
     receiver::{ActorReceiver, BasicContext},
-    ActorAddr, ActorWeakAddr, Addr,
+    ActorAddr, ActorUniqueKey, ActorWeakAddr, Addr,
 };
-use crate::system::{SystemEvent, SystemWeakRef};
+use crate::system::{SystemEvent, SystemRef, SystemWeakRef};
 
 pub(crate) type BoxedGuardianHandle = Arc<BoxedActorGuardian>;
 pub(crate) type BoxedGuardianWeakHandle = Weak<BoxedActorGuardian>;
-pub(crate) type GuardianRef = ActorAddr<GuardianReceiver>;
-pub(crate) type GuardianWeakRef = ActorWeakAddr<GuardianReceiver>;
+pub(crate) type GuardianAddr = ActorAddr<GuardianReceiver>;
+pub(crate) type GuardianWeakAddr = ActorWeakAddr<GuardianReceiver>;
 
 /// The guardians of all the Actors in the System.
 pub(crate) struct Guardians {
@@ -63,6 +63,11 @@ impl BoxedActorGuardian {
 
     pub(crate) fn get_delegate(&self) -> Option<ActorAddr<GuardianReceiver>> {
         self.0.get_delegate()
+    }
+
+    #[allow(dead_code)]
+    fn system(&self) -> Option<SystemRef> {
+        self.0.system()
     }
 }
 
@@ -117,7 +122,12 @@ impl ActorGuardian {
             }
 
             let factory = move || GuardianReceiver(handle.clone());
-            match ActorBuilder::create_actor(factory, &_g_type, &system, None) {
+            match ActorBuilder::create_actor(
+                factory,
+                &_g_type,
+                &system,
+                ActorBuilderConfig::default(),
+            ) {
                 Ok(spawn_item) => {
                     let delegate = system.run_actor(spawn_item);
                     let mut data = self.inner().delegate.write();
@@ -138,6 +148,10 @@ impl ActorGuardian {
         None
     }
 
+    fn system(&self) -> Option<SystemRef> {
+        self.inner().system.upgrade()
+    }
+
     // method to get the inner as currently all variants use the same Inner
     fn inner(&self) -> &Inner {
         match self {
@@ -153,8 +167,10 @@ impl ActorGuardian {
 // the specialized-executor with thread-level control. Both deal with resource
 // allocation/management at a granular level.
 pub(crate) trait Supervisor {
+    fn get_actor<R: ActorReceiver>(&self, key: &ActorUniqueKey) -> Option<ActorAddr<R>>;
     fn add_actor<R: ActorReceiver>(&self, child: ActorAddr<R>);
     fn remove_actor<R: ActorReceiver>(&self, child: ActorAddr<R>);
+    fn get_address(&self, key: &ActorUniqueKey) -> Option<Addr>;
     fn add_address(&self, child: Addr);
     fn remove_address(&self, child: &Addr);
 }
@@ -162,7 +178,7 @@ pub(crate) trait Supervisor {
 struct Inner {
     system: SystemWeakRef,
     delegate: RwLock<Option<ActorAddr<GuardianReceiver>>>,
-    addresses: DashMap<String, Addr>,
+    addresses: DashMap<ActorUniqueKey, Addr>,
 }
 
 pub(crate) struct GuardianReceiver(BoxedGuardianWeakHandle);
@@ -183,34 +199,55 @@ impl ActorReceiver for GuardianReceiver {
 }
 
 impl Supervisor for ActorGuardian {
+    fn get_actor<R: ActorReceiver>(&self, key: &ActorUniqueKey) -> Option<ActorAddr<R>> {
+        self.get_address(key)
+            .and_then(|addr| addr.try_get_actoraddr().ok())
+    }
+
     fn add_actor<R: ActorReceiver>(&self, actor: ActorAddr<R>) {
         self.add_address(actor.get_address());
     }
 
     fn remove_actor<R: ActorReceiver>(&self, actor: ActorAddr<R>) {
         let id = actor.get_id();
-        self.inner().addresses.remove(&id.get_path_str());
+        self.inner().addresses.remove(&id.unique_key());
+    }
+
+    fn get_address(&self, key: &ActorUniqueKey) -> Option<Addr> {
+        self.inner()
+            .addresses
+            .get(key)
+            .map(|pair| pair.value().clone())
     }
 
     fn add_address(&self, address: Addr) {
         let id = address.get_id();
-        self.inner().addresses.insert(id.get_path_str(), address);
+        self.inner()
+            .addresses
+            .insert(id.unique_key().clone(), address);
     }
 
     fn remove_address(&self, address: &Addr) {
-        println!("{}", "===== remove_address =====");
         let id = address.get_id();
-        self.inner().addresses.remove(&id.get_path_str());
+        self.inner().addresses.remove(&id.unique_key());
     }
 }
 
 impl Supervisor for BoxedActorGuardian {
+    fn get_actor<R: ActorReceiver>(&self, key: &ActorUniqueKey) -> Option<ActorAddr<R>> {
+        self.0.get_actor(key)
+    }
+
     fn add_actor<R: ActorReceiver>(&self, actor: ActorAddr<R>) {
         self.0.as_ref().add_actor(actor);
     }
 
     fn remove_actor<R: ActorReceiver>(&self, actor: ActorAddr<R>) {
         self.0.as_ref().remove_actor(actor);
+    }
+
+    fn get_address(&self, key: &ActorUniqueKey) -> Option<Addr> {
+        self.0.get_address(key)
     }
 
     fn add_address(&self, address: Addr) {
@@ -221,14 +258,6 @@ impl Supervisor for BoxedActorGuardian {
         self.0.as_ref().remove_address(address);
     }
 }
-
-// [todo] MessageSender -> RemoteMessage -> DispatchRPC
-// pub(crate) struct RemoteMessage<M: Message, R: ActorReceiver> {
-//     msg: M,
-//     remote_ref: ActorAddr<R>,
-// }
-// impl Message for RemoteMessage {type Result= u32;}
-// impl MessageHandler<RemoteMessage> for GuardianReceiver {}
 
 #[derive(Debug)]
 pub(crate) struct GuardianCreationError;

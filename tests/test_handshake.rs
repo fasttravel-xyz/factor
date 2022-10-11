@@ -1,4 +1,6 @@
-use factor::prelude::*;
+#![cfg(not(feature = "ipc-cluster"))]
+
+use factor::{builder::ActorBuilderConfig, prelude::*};
 use futures::channel::oneshot;
 use std::sync::atomic::{AtomicU16, AtomicU8, Ordering};
 
@@ -226,11 +228,15 @@ impl MessageHandler<MessageHeader<HandshakeClient>> for HandshakeServer {
 async fn test_handshake() {
     let sys = factor::init_system(Some("TestSystem".to_string()));
 
-    let srv_spawn = builder::ActorBuilder::create(|| HandshakeServer {}, &sys);
+    let srv_spawn =
+        builder::ActorBuilder::create(|| HandshakeServer {}, &sys, ActorBuilderConfig::default());
     let server = sys.run_actor(srv_spawn.unwrap());
 
-    let cl_spawn =
-        builder::ActorBuilder::create(move || HandshakeClient::new(server.clone()), &sys);
+    let cl_spawn = builder::ActorBuilder::create(
+        move || HandshakeClient::new(server.clone()),
+        &sys,
+        ActorBuilderConfig::default(),
+    );
     let _client = sys.run_actor(cl_spawn.unwrap());
 
     std::thread::sleep(std::time::Duration::from_millis(1000));

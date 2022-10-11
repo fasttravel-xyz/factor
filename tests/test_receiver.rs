@@ -1,15 +1,20 @@
-use factor::prelude::*;
+use factor::{builder::ActorBuilderConfig, prelude::*};
 use std::sync::atomic::{AtomicU8, Ordering};
 
 static SUM: AtomicU8 = AtomicU8::new(0);
 static ADD_CALL_COUNT: AtomicU8 = AtomicU8::new(0);
 static SUB_CALL_COUNT: AtomicU8 = AtomicU8::new(0);
 
+#[cfg(all(unix, feature = "ipc-cluster"))]
+use serde::{Deserialize, Serialize};
+
+#[cfg_attr(all(unix, feature = "ipc-cluster"), derive(Serialize, Deserialize))]
 struct MessageAdd(u8);
 impl Message for MessageAdd {
     type Result = Option<u8>;
 }
 
+#[cfg_attr(all(unix, feature = "ipc-cluster"), derive(Serialize, Deserialize))]
 struct MessageSubtract(u8);
 impl Message for MessageSubtract {
     type Result = Option<u8>;
@@ -43,28 +48,24 @@ impl MessageHandler<MessageSubtract> for OpsReceiver {
 #[tokio::test]
 async fn test_receiver() {
     let sys = factor::init_system(Some("TestSystem".to_string()));
-    let spawn_item = builder::ActorBuilder::create(|| OpsReceiver {}, &sys);
+    let spawn_item =
+        builder::ActorBuilder::create(|| OpsReceiver {}, &sys, ActorBuilderConfig::default());
     let addr = sys.run_actor(spawn_item.unwrap());
 
     // 0 + 3
-    let mut result = addr.tell(MessageAdd(3));
-    assert!(result.is_ok());
+    addr.tell(MessageAdd(3)).expect("addr_tell_failed");
 
     // 0 + 3 + 13
-    result = addr.tell(MessageAdd(13));
-    assert!(result.is_ok());
+    addr.tell(MessageAdd(13)).expect("addr_tell_failed");
 
     // 0 + 3 + 13 - 5
-    result = addr.tell(MessageSubtract(5));
-    assert!(result.is_ok());
+    addr.tell(MessageSubtract(5)).expect("addr_tell_failed");
 
     // 0 + 3 + 13 - 5 - 6
-    result = addr.tell(MessageSubtract(6));
-    assert!(result.is_ok());
+    addr.tell(MessageSubtract(6)).expect("addr_tell_failed");
 
     // 0 + 3 + 13 - 5 - 6 + 3 = 8
-    result = addr.tell(MessageAdd(3));
-    assert!(result.is_ok());
+    addr.tell(MessageAdd(3)).expect("addr_tell_failed");
 
     let now = std::time::Instant::now();
     loop {

@@ -1,11 +1,16 @@
 pub(crate) mod envelope;
 pub(crate) mod handler;
 
+use async_trait::async_trait;
 use futures::channel::oneshot;
-use log::trace;
+use log::error;
+use std::fmt;
 use std::sync::Arc;
 
-use crate::actor::{core::ActorCore, receiver::ActorReceiver, ActorWeakAddr};
+#[cfg(all(unix, feature = "ipc-cluster"))]
+use serde::{Deserialize, Serialize};
+
+use crate::actor::{core::ActorCore, core::RemoteActorCore, receiver::ActorReceiver};
 use crate::message::{
     envelope::{Envelope, SystemEnvelope},
     handler::MessageHandler,
@@ -13,11 +18,19 @@ use crate::message::{
 use crate::system::SystemMessage;
 
 /// All message types must implement this trait.
+#[cfg(not(feature = "ipc-cluster"))]
 pub trait Message {
     type Result: 'static + Send;
 }
 
+/// All message types must implement this trait.
+#[cfg(all(unix, feature = "ipc-cluster"))]
+pub trait Message: for<'a> Deserialize<'a> + Serialize {
+    type Result: 'static + Send + for<'a> Deserialize<'a> + Serialize;
+}
+
 /// Trait for the actor Typed Message Sender.
+#[async_trait]
 pub(crate) trait MessageSend<M: Message + Send + 'static>: Send {
     // CHANGELOG [15/AUG/2022]: The trait has the generic `M: Message` and the
     // implementing struct has the generic `R: ActorReceiver`. This way trait-objects
@@ -28,7 +41,7 @@ pub(crate) trait MessageSend<M: Message + Send + 'static>: Send {
     fn tell(&self, msg: M) -> Result<(), MessageSendError>;
 
     /// Send message to the actor mailbox and receive a response back.
-    fn ask(&self, msg: M) -> Result<oneshot::Receiver<M::Result>, MessageSendError>;
+    async fn ask(&self, msg: M) -> Result<M::Result, MessageSendError>;
 }
 
 pub(crate) trait SystemMessageSend: Send {
@@ -40,57 +53,136 @@ pub(crate) trait SystemMessageSend: Send {
 #[allow(dead_code)]
 pub(crate) enum MessageSender<R: ActorReceiver> {
     LocalSender { core: Arc<ActorCore<R>> },
-    RemoteSender { _remote_guardian: ActorWeakAddr<R> },
+    RemoteSender { core: Arc<RemoteActorCore<R>> },
 }
 
+#[async_trait]
 impl<R, M> MessageSend<M> for MessageSender<R>
 where
+    R: ActorReceiver + MessageHandler<M> + 'static,
     M: Message + Send + 'static,
-    R: ActorReceiver + MessageHandler<M>,
+    M::Result: 'static,
 {
     fn tell(&self, msg: M) -> Result<(), MessageSendError> {
-        let mut result = Ok(());
-
         match self {
             MessageSender::LocalSender { core } => {
                 let envelope = Envelope::new(msg, None);
-                if let Err(e) = core.send(envelope) {
-                    trace!("MessageSender::tell::error {:?}", e);
-                    result = Err(e);
-                }
+                return core.send(envelope).map_err(|e| {
+                    error!("MessageSender::tell::error {:?}", e);
+                    e
+                });
             }
-            MessageSender::RemoteSender { _remote_guardian } => {
-                // =============================================================
-                // [todo] cluster implementation is low priority.
-                // [pseudocode] create the guardian::RemoteMessage and send to
-                //              _remote_guardian for dispatch:
-                // let remote_ref = core.address().unwrap().upgrade().unwrap();
-                // let r_msg = RemoteMessage{msg, remote_ref};
-                // let r_dispatcher = _remote_guardian.upgrade().unwrap();
-                // r_dispatcher->tell(r_msg);
-                // =============================================================
-            }
+            MessageSender::RemoteSender { core } => return self.remote_tell(msg, core),
         }
-
-        result
     }
 
-    fn ask(&self, msg: M) -> Result<oneshot::Receiver<M::Result>, MessageSendError> {
+    async fn ask(&self, msg: M) -> Result<M::Result, MessageSendError> {
         let (tx, rx) = oneshot::channel::<M::Result>();
-        let mut result = Ok(rx);
 
         match self {
             MessageSender::LocalSender { core } => {
                 let envelope = Envelope::new(msg, Some(tx));
                 if let Err(e) = core.send(envelope) {
-                    trace!("MessageSender::ask::error {:?}", e);
-                    result = Err(e);
+                    error!("MessageSender::ask::error {:?}", e);
+                    return Err(e);
+                } else {
+                    return rx.await.map_err(|e| e.into());
                 }
             }
-            MessageSender::RemoteSender { _remote_guardian } => {} // todo
+            MessageSender::RemoteSender { core } => return self.remote_ask(msg, core).await,
+        }
+    }
+}
+
+impl<R> MessageSender<R>
+where
+    R: ActorReceiver,
+{
+    #[cfg(all(unix, feature = "ipc-cluster"))]
+    fn remote_tell<M>(&self, msg: M, core: &Arc<RemoteActorCore<R>>) -> Result<(), MessageSendError>
+    where
+        R: MessageHandler<M> + 'static,
+        M: Message + Send + 'static,
+        M::Result: 'static,
+    {
+        let addr = core
+            .address
+            .upgrade()
+            .ok_or(MessageSendError::ErrAddrUpgradeFailed)?;
+        let system = core
+            .system
+            .upgrade()
+            .ok_or(MessageSendError::ErrSysUpgradeFailed)?;
+        let system_moved = system.clone();
+        let node_id = addr.get_id().node_id();
+        let task = async move {
+            if let Some(remote_client) = system_moved.get_node_client(node_id).await {
+                remote_client.tell(addr, msg).await;
+            }
+        };
+        system.spawn_ok(task);
+
+        Ok(())
+    }
+
+    #[cfg(not(feature = "ipc-cluster"))]
+    fn remote_tell<M>(
+        &self,
+        _msg: M,
+        _core: &Arc<RemoteActorCore<R>>,
+    ) -> Result<(), MessageSendError>
+    where
+        R: MessageHandler<M> + 'static,
+        M: Message + Send + 'static,
+        M::Result: 'static,
+    {
+        error!("remote_tell_not_activated. required feature=ipc-cluster");
+        Err(MessageSendError::ErrRemoteTellFailed)
+    }
+
+    #[cfg(all(unix, feature = "ipc-cluster"))]
+    async fn remote_ask<M>(
+        &self,
+        msg: M,
+        core: &Arc<RemoteActorCore<R>>,
+    ) -> Result<M::Result, MessageSendError>
+    where
+        R: MessageHandler<M> + 'static,
+        M: Message + Send + 'static,
+        M::Result: 'static,
+    {
+        let addr = core
+            .address
+            .upgrade()
+            .ok_or(MessageSendError::ErrAddrUpgradeFailed)?;
+        let system = core
+            .system
+            .upgrade()
+            .ok_or(MessageSendError::ErrSysUpgradeFailed)?;
+        let node_id = addr.get_id().node_id();
+        if let Some(remote_client) = system.get_node_client(node_id).await {
+            return remote_client
+                .ask(addr, msg)
+                .await
+                .map_err(|_| MessageSendError::ErrRemoteAskFailed);
         }
 
-        result
+        Err(MessageSendError::ErrRemoteAskFailed)
+    }
+
+    #[cfg(not(feature = "ipc-cluster"))]
+    async fn remote_ask<M>(
+        &self,
+        _msg: M,
+        _core: &Arc<RemoteActorCore<R>>,
+    ) -> Result<M::Result, MessageSendError>
+    where
+        R: MessageHandler<M> + 'static,
+        M: Message + Send + 'static,
+        M::Result: 'static,
+    {
+        error!("remote_ask_not_activated. required feature=ipc-cluster");
+        Err(MessageSendError::ErrRemoteAskFailed)
     }
 }
 
@@ -105,11 +197,15 @@ where
             MessageSender::LocalSender { core } => {
                 let envelope = SystemEnvelope::new(msg);
                 if let Err(e) = core.send_sys(envelope) {
-                    trace!("MessageSender::tell_sys::error {:?}", e);
+                    error!("MessageSender::tell_sys::error {:?}", e);
                     result = Err(e);
                 }
             }
-            MessageSender::RemoteSender { _remote_guardian } => {} // todo
+            MessageSender::RemoteSender { core: _ } => {
+                // Currently, system_messages not available to remote-addresses.
+                // Adding support is trivial as we have already implemented tell/ask
+                // for ipc-cluster, will do with pubsub implementation (low-priority).
+            }
         }
 
         result
@@ -118,10 +214,37 @@ where
 
 /// Message Sender Error.
 #[derive(Debug)]
-pub struct MessageSendError;
-// [todo]: string error messages as payloads.
+pub enum MessageSendError {
+    ErrDefault,
+    ErrAddrUpgradeFailed,
+    ErrSysUpgradeFailed,
+    ErrSenderNotResolved,
+    ErrAskFutureCanceled,
+    ErrRemoteTellFailed,
+    ErrRemoteAskFailed,
+    ErrActorCoreCorrupted,
+}
+
+impl fmt::Display for MessageSendError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let msg: &str;
+        match self {
+            MessageSendError::ErrAddrUpgradeFailed => msg = "weak_self_addr_upgrade_failed",
+            MessageSendError::ErrSysUpgradeFailed => msg = "weak_system_upgrade_failed",
+            MessageSendError::ErrSenderNotResolved => msg = "sender_not_resolved_for_addr",
+            MessageSendError::ErrAskFutureCanceled => msg = "ask_future_canceled_by_mailbox",
+            MessageSendError::ErrRemoteTellFailed => msg = "remote_tell_failed",
+            MessageSendError::ErrRemoteAskFailed => msg = "remote_ask_failed",
+            MessageSendError::ErrActorCoreCorrupted => msg = "actor_core_corrupted",
+            _ => msg = "",
+        }
+
+        write!(f, "({})", msg)
+    }
+}
+
 impl From<oneshot::Canceled> for MessageSendError {
     fn from(_error: oneshot::Canceled) -> Self {
-        MessageSendError
+        MessageSendError::ErrAskFutureCanceled
     }
 }

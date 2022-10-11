@@ -1,0 +1,29 @@
+[package]
+name = "example_ipc_remote_ask"
+version = "0.0.1"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[lib]
+name = "example_ipc_remote_ask"
+path = "src/lib.rs"
+
+[[bin]]
+name = "main_node"
+path = "src/main_node.rs"
+
+[[bin]]
+name = "worker_node"
+path = "src/worker_node.rs"
+
+
+[dependencies]
+factor = { version = "0.0.1", path = "../../", features = ["ipc-cluster"] }
+serde = { version = "1.0", features = ["derive"] }
+tokio = { version = "1.0", features = ["macros", "rt-multi-thread"] }
+clap = { version = "4.0", features = ["derive"] }
+
+[features]
+default = []
+threadpool-tokio = ["factor/threadpool-tokio"]

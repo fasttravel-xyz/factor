@@ -92,14 +92,16 @@ where
 {
     fn handle(&mut self, actor: &mut R, ctx: &mut R::Context) {
         if let Some(msg) = self.msg.take() {
-            let fut = <R as MessageHandler<M>>::handle(actor, msg, ctx);
+            // [todo]: if reply_to is none (i.e. tell and not ask), and response is Future not Result,
+            // we have to poll the future, or the future will never get polled.
+            let response = <R as MessageHandler<M>>::handle(actor, msg, ctx);
             if let Some(reply_to) = self.reply_to.take() {
                 if reply_to.tx.is_some() {
-                    fut.handle(ctx, reply_to);
+                    response.handle(ctx, reply_to);
                 }
             }
         } else {
-            trace!("{}", "MessageEnvelope_handle_error msg is None")
+            trace!("MessageEnvelope_handle_error msg is None")
         }
     }
 }
@@ -114,7 +116,7 @@ impl<R: ActorReceiver> SystemPayload<R> for SystemMessageEnvelope {
         if let Some(msg) = self.0.take() {
             handle_system_msg(&msg, actor, ctx)
         } else {
-            trace!("{}", "SystemMessageEnvelope_handle_error msg is None")
+            trace!("SystemMessageEnvelope_handle_error msg is None")
         }
     }
 }

@@ -1,4 +1,4 @@
 #[tokio::test]
-async fn test_message_addr() {
+async fn test_addr_serde() {
     // unimplemented!("implement this");
 }
