@@ -1,13 +1,8 @@
-<div align="center">
-  <h1>factor</h2>
-</div>
+<div align="center"><h1>factor</h2></div>
 
 **factor** is a Rust framework to build concurrent services using the Actor Model.
 
 >*The current version of this repository is 0.0.1-dev0 and is undergoing development for the first release client 0.1.0-rc0, which means that both the public interfaces and internal module structures may change significantly.*
-
-**factor** is designed to support remote actors if required in future, so all interactions with the actor are only through messages. Even Lifecycle commands should also be sent as `SystemMessage::SystemCommand`, there are no direct methods like `stop()`. So all communications are async by default, in future we might add in-process sync-actors.
-
 
 **factor provides:**
 
@@ -15,32 +10,38 @@
 * `Ask` and `Tell` patterns.
 * Uses `futures` for asynchronous message handling.
 * Concurrency using `futures::executor::ThreadPool`.
-* Quick `LocalPool` access to wait for multiple quick-tasks completion.
 * Unbounded channels for messages (this might change.)
-* Actor-pool for running a CPU bound computation service on multiple actors and threads.
-* Simple functional message handlers.
+* `ActorPool` for running a CPU bound computation service on multiple dedicated threads.
 * Async response.
 * Granular locks when possible.
-* Runs on stable Rust 1.62+
-
+* Runs on stable Rust 1.60+
+* `Ipc-cluster` with remote ipc-nodes.
+* Task and Message Scheduling with `schedule_once`, `schedule_once_at`, and `schedule_repeat`.
+* Quick `LocalPool` access.
+* Simple functional message handlers `[experimental.may.get.removed]`.
 
 **factor intends to provide (in future):**
 * Actor supervision to recover from failure (restart).
 * PubSub service for system topics.
-* Message and task scheduling.
-* Status dashboard for system and actors.
-* Extend logging and tracing support.
-* Remote actors.
-* Thread level executor control.
 * Ergonomic macros.
-* Any messages.
+* `[low-priority]`
+    * Status dashboard for system and actors.
+    * Thread level executor control.
+    * Any messages.
 
 **Usage:**
 
 **factor** is not published to [crates.io](https://crates.io), to use add below dependency to your `Cargo.toml` file.
 ```toml
+# In default configuration.
 [dependencies]
 factor = { git = "https://github.com/fasttravel-xyz/factor", branch = "0.0.1-dev0" }
+
+# In ipc-cluster configuration (has dependency on tokio).
+[dependencies]
+factor = { git = "https://github.com/fasttravel-xyz/factor", branch = "0.0.1-dev0", features=["ipc-cluster"] }
+
+
 ```
 
 **Basic Example:**
@@ -147,21 +148,38 @@ fn main() {
 }
 ```
 
-For examples refer to the [tests] directory:
+For examples refer to the [tests] and [examples] directories:
 
 * [tell-ask test]
 * [handshake test]
 * [init-stop test]
 * [actor-pool test]
+* [schedule-task test]
+* [ipc-remote-ask example]
+
+Benchmarks:
+* [performance-discussions]
+* [ring-tell example]
+* [ring-ask example]
+* [ipc-remote-storm example]
+* [ipc-remote-ring example]
+
 
 More examples will be added to the [examples] directory after v0.1.0 release.
 
-[tests]: https://github.com/fasttravel-xyz/factor/tree/0.0.1-dev0/tests
-[examples]: https://github.com/fasttravel-xyz/factor/tree/0.0.1-dev0/examples
-[tell-ask test]: https://github.com/fasttravel-xyz/factor/blob/0.0.1-dev0/tests/test_ask.rs
-[handshake test]: https://github.com/fasttravel-xyz/factor/blob/0.0.1-dev0/tests/test_handshake.rs
-[init-stop test]: https://github.com/fasttravel-xyz/factor/blob/0.0.1-dev0/tests/test_init_stop.rs
-[actor-pool test]: https://github.com/fasttravel-xyz/factor/blob/0.0.1-dev0/tests/test_actor_pool.rs
+[tests]: tests
+[examples]: examples
+[tell-ask test]: tests/test_ask.rs
+[handshake test]: tests/test_handshake.rs
+[init-stop test]: tests/test_init_stop.rs
+[actor-pool test]: tests/test_actor_pool.rs
+[schedule-task test]: tests/test_schedule_task.rs
+[ipc-remote-ask example]: examples/example_ipc_remote_ask
+[ring-tell example]: examples/example_ring_tell.rs
+[ring-ask example]: examples/example_ring_ask.rs
+[ipc-remote-storm example]: examples/example_ipc_remote_storm
+[ipc-remote-ring example]: examples/example_ipc_remote_ring
+[performance-discussions]: examples/README.md
 
 ```sh
 # run all the tests:
@@ -223,8 +241,35 @@ where
 }
 ```
 
+**factor** provides the below execution models to attach resources to Actors:
+* System Executor (Default)
+    ```
+    Actors and tasks get spawned into the ThreadPool executor of the System. All actors and tasks share the same ThreadPool.
+    ```
+* ActorPool Executor
+    ```
+    Spawn individual Actor in a dedicated ThreadPool, rest share the System ThreadPool. Intended for Actors with CPU bound computation needs. The dedicated ThreadPool could have a single thread or multiple threads.
+    ```
+* IPC-Remote Cluster Nodes
+    ```
+    Spawn a group of related Actors in a separate worker process (ipc-remote-node).
+    Intended for Actors that need dedicated and isolated resources.
+
+    
+    `factor` provides only ipc-remote actors where cluster-nodes are process-nodes, this is the only cluster model that factor intends to provide. `factor` doesn't intend to provide any other cluster model e.g. multi-machine (physical/virtual) cluster for static or dynamic horizontal-scaling, etc., as there are better and established solutions already available that `factor` could utilize.
+
+    This execution model is targeted towards applications that need to keep adding dedicated resources in separate processes. This model is different from:
+        * a cluster running with a pre-defined sets of node and all nodes sharing the application load (static)
+        * a cluster adding new nodes when a load-balancing threshold is reached and it needs more resources (dynamic).
+
+    `factor` cluster provides an execution model in which a group of related actors is launched in a child process (worker-node) of the main process (main-node). By default, worker nodes don't store or receive information about other worker nodes, as number of worker-nodes will keep on growing and usually different worker nodes will have unrelated actors. A worker node retrieves the information about another worker node only when required (e.g. to resolve the address of an actor that is running in a different worker node.)
+    
+
+    ```
+
+
 ## Contributing
-Currently, this repository is not open for contributions.
+Currently, this repository is not open for contributions or feature requests.
 
 ## License
 

@@ -4,6 +4,10 @@ use std::sync::atomic::{AtomicU8, Ordering};
 static SUM: AtomicU8 = AtomicU8::new(0);
 static CALL_COUNT: AtomicU8 = AtomicU8::new(0);
 
+#[cfg(all(unix, feature = "ipc-cluster"))]
+use serde::{Deserialize, Serialize};
+
+#[cfg_attr(all(unix, feature = "ipc-cluster"), derive(Serialize, Deserialize))]
 struct FnMessageAdd(u8);
 impl Message for FnMessageAdd {
     type Result = Option<u8>;

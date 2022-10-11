@@ -1,20 +1,23 @@
 use flume;
-use futures::executor::{ThreadPool, ThreadPoolBuilder};
-use log::trace;
+use log::error;
 use std::sync::{Arc, Mutex, Weak};
 
-use crate::actor::{
-    mailbox::Mailbox,
-    receiver::{ActorReceiver, BasicContext},
-    ActorWeakAddr, Addr,
-};
 use crate::message::{
     envelope::{Envelope, Payload, SystemEnvelope, SystemPayload},
     MessageSendError,
 };
 use crate::system::{
-    guardian::{ActorGuardianType, GuardianWeakRef},
+    executor::{ActorExecutor, ThreadPoolExecutor},
+    guardian::{ActorGuardianType, GuardianWeakAddr},
     SystemEvent, SystemMessage, SystemRef,
+};
+use crate::{
+    actor::{
+        mailbox::Mailbox,
+        receiver::{ActorReceiver, BasicContext},
+        ActorWeakAddr, Addr,
+    },
+    system::SystemWeakRef,
 };
 
 /// Messages related to actor looper and mailbox scheduling.
@@ -33,23 +36,15 @@ pub(in crate::actor) enum CoreCommand {
 type MsgSender<R> = flume::Sender<Box<dyn Payload<R> + Send>>;
 type SysMsgSender<R> = flume::Sender<Box<dyn SystemPayload<R> + Send>>;
 
-/// Actor core executor type.
-#[derive(Clone)]
-pub(crate) enum CoreExecutorType {
-    /// Single core, uses the system ThreadPool executor.
-    Single,
-    /// Pool of multiple actor cores, have their own ThreadPool executor.
-    /// For CPU bound tasks with computation requirements.
-    Pool(Arc<Box<ThreadPool>>),
-}
-
-#[allow(dead_code)]
-pub(crate) struct ActorCore<R: ActorReceiver> {
-    executor: CoreExecutorType, // [todo] for pool pass this executor to handler-context as well
-    guardian: Option<GuardianWeakRef>,
+pub(crate) struct ActorCore<R>
+where
+    R: ActorReceiver,
+{
+    executor: ActorExecutor,
+    guardian: Option<GuardianWeakAddr>,
     address: Option<ActorWeakAddr<R>>,
-    processors: Vec<Arc<Processor<R>>>, // index aligned with loopers
-    loopers: Vec<Looper<R>>,            // index aligned with processors
+    // processors: Vec<Arc<Processor<R>>>, // index aligned with loopers
+    loopers: Vec<Looper<R>>, // index aligned with processors
 }
 
 pub(in crate::actor) struct Processor<R: ActorReceiver> {
@@ -58,12 +53,11 @@ pub(in crate::actor) struct Processor<R: ActorReceiver> {
     pub(in crate::actor) core: Weak<ActorCore<R>>,
 }
 
-#[allow(dead_code)]
 struct Looper<R: ActorReceiver> {
     tx_cmd: flume::Sender<CoreCommand>,
     tx_msg: MsgSender<R>,
     tx_msg_sys: SysMsgSender<R>,
-    mb: Arc<Mailbox<R>>,
+    // mb: Arc<Mailbox<R>>,
 }
 
 // In future maybe we can use type_alias_impl_trait and won't need this struct
@@ -107,7 +101,7 @@ impl<R: ActorReceiver> LopperTask<R> {
                         // 2. We have to make sure whether the objects are unwinding
                         //    safe and if not how to handle them. Some cases like
                         //    process_abort will not be recoverable.
-                        // 3. Multiple actors might need restart if sharing panicking thread.
+                        // 3. Multiple actors might need restart if sharing panicking thread or use catch_unwind().
                         // 4. MailboxPanicGuard => thread::panicking() needs to be implemented.
                         // 5. We have to make sure that user provided ActorReceiver
                         //    could be recovered or might need recreation. For this
@@ -145,7 +139,7 @@ impl<R: ActorReceiver> ActorCore<R> {
                     tx_cmd,
                     tx_msg: tx_msg.clone(),
                     tx_msg_sys,
-                    mb,
+                    // mb,
                 },
                 LopperTask {
                     rx_cmd: Some(rx_cmd),
@@ -164,34 +158,30 @@ impl<R: ActorReceiver> ActorCore<R> {
         g_type: &ActorGuardianType,
         address: ActorWeakAddr<R>,
         pool_size: Option<usize>,
-    ) -> Result<(Arc<Self>, Vec<LopperTask<R>>, CoreExecutorType), ActorCoreCreationError>
+    ) -> Result<(Arc<Self>, Vec<LopperTask<R>>, ActorExecutor), ActorCoreCreationError>
     where
         R: ActorReceiver,
         Fac: Fn() -> R + Send + Sync + 'static,
     {
-        // initialize the looopers
+        // executor type
+        let mut executor = ActorExecutor::System;
         let mut act_pool_size = 1;
+
         if let Some(pool_size) = pool_size {
+            executor = ActorExecutor::Pool(Arc::new(Box::new(ThreadPoolExecutor::new(
+                Some(pool_size),
+                Some("_actor_"),
+            ))));
             act_pool_size = pool_size;
         }
+
+        // initialize the looopers
         let mut loopers_and_tasks = ActorCore::create_loopers(act_pool_size);
 
         // "guardian" will be None for other guardians as for a guardian the g_type is Root(dummy)
         let mut guardian = None;
         if let Some(g) = system.get_guardian_ref(g_type) {
             guardian = Some(g.downgrade());
-        }
-
-        // executor type
-        let mut executor = CoreExecutorType::Single;
-        // check if pool_size is Some. If it is Some even if pool_size == 1,
-        // we should create separate executor for the actor.
-        if let Some(pool_size) = pool_size {
-            let mut builder = ThreadPoolBuilder::new();
-            builder.name_prefix("actor_pool_executor_");
-            builder.pool_size(pool_size);
-            executor = CoreExecutorType::Pool(Arc::new(Box::new(builder.create().unwrap())));
-            // let it panic if error
         }
 
         let mut processors: Vec<Arc<Processor<R>>> = Vec::new();
@@ -212,7 +202,7 @@ impl<R: ActorReceiver> ActorCore<R> {
                     looper_tasks.push(task);
                     looper_tasks[i].processor = Some(processor.clone());
                 } else {
-                    trace!("ActorCore_create_core_error: loopers size mismatch");
+                    error!("ActorCore_create_core_error: loopers size mismatch");
                 }
             }
 
@@ -220,7 +210,7 @@ impl<R: ActorReceiver> ActorCore<R> {
                 executor: executor.clone(),
                 guardian,
                 address: Some(address),
-                processors,
+                // processors,
                 loopers,
             }
         });
@@ -230,24 +220,21 @@ impl<R: ActorReceiver> ActorCore<R> {
 
     pub(crate) fn send(&self, env: Envelope<R>) -> Result<(), MessageSendError> {
         if self.loopers.len() < 1 {
-            return Err(MessageSendError);
+            return Err(MessageSendError::ErrActorCoreCorrupted);
         }
         let mut result = Ok(());
 
         // message queued only once, as all loopers share queue
-        match self.loopers[0].tx_msg.send(Box::new(env)) {
-            Ok(()) => {}
-            Err(e) => {
-                result = Err(MessageSendError);
-                trace!("ActorCore::send::error {}", e);
-            }
-        };
+        self.loopers[0].tx_msg.send(Box::new(env)).map_err(|e| {
+            error!("ActorCore::send::error {}", e);
+            MessageSendError::ErrActorCoreCorrupted
+        })?;
 
         // schedule the pool mailboxes to run. ??Handle multiple runs queued??
         for looper in &self.loopers {
             if let Err(e) = looper.tx_cmd.send(CoreCommand::Run) {
-                result = Err(MessageSendError);
-                trace!("ActorCore::send::error {}", e);
+                result = Err(MessageSendError::ErrActorCoreCorrupted);
+                error!("ActorCore::send::error {}", e);
                 break;
             }
         }
@@ -257,23 +244,23 @@ impl<R: ActorReceiver> ActorCore<R> {
 
     pub(crate) fn send_sys(&self, env: SystemEnvelope<R>) -> Result<(), MessageSendError> {
         if self.loopers.len() < 1 {
-            return Err(MessageSendError);
+            return Err(MessageSendError::ErrActorCoreCorrupted);
         }
         let mut result = Ok(());
 
         // message queued only once, as all loopers share queue
-        match self.loopers[0].tx_msg_sys.send(Box::new(env)) {
-            Ok(()) => {}
-            Err(e) => {
-                result = Err(MessageSendError);
-                trace!("ActorCore::send_sys::error {}", e);
-            }
-        };
+        self.loopers[0]
+            .tx_msg_sys
+            .send(Box::new(env))
+            .map_err(|e| {
+                error!("ActorCore::send_sys::error {}", e);
+                MessageSendError::ErrActorCoreCorrupted
+            })?;
 
         for looper in &self.loopers {
             if let Err(e) = looper.tx_cmd.send(CoreCommand::Run) {
-                result = Err(MessageSendError);
-                trace!("ActorCore::send_sys::error {}", e);
+                result = Err(MessageSendError::ErrActorCoreCorrupted);
+                error!("ActorCore::send_sys::error {}", e);
                 break;
             }
         }
@@ -284,7 +271,7 @@ impl<R: ActorReceiver> ActorCore<R> {
     pub(crate) fn schedule_mailbox(&self) {
         for looper in &self.loopers {
             if let Err(e) = looper.tx_cmd.send(CoreCommand::Run) {
-                trace!("schedule_mailbox_error {}", e);
+                error!("schedule_mailbox_error {}", e);
                 break;
             }
         }
@@ -293,7 +280,7 @@ impl<R: ActorReceiver> ActorCore<R> {
     pub(crate) fn set_pause(&self, b: bool) {
         for looper in &self.loopers {
             if let Err(e) = looper.tx_cmd.send(CoreCommand::Pause(b)) {
-                trace!("set_pause_error {}", e);
+                error!("set_pause_error {}", e);
                 break;
             }
         }
@@ -301,6 +288,10 @@ impl<R: ActorReceiver> ActorCore<R> {
 
     pub(crate) fn address(&self) -> Option<ActorWeakAddr<R>> {
         self.address.clone()
+    }
+
+    pub(crate) fn executor(&self) -> ActorExecutor {
+        self.executor.clone()
     }
 
     pub(crate) fn stop(&self) {
@@ -313,7 +304,7 @@ impl<R: ActorReceiver> ActorCore<R> {
                     if let Some(addr) = weak_ref.upgrade() {
                         for looper in &self.loopers {
                             if let Err(e) = looper.tx_cmd.send(CoreCommand::Terminate) {
-                                trace!("ActorCore::stop::error {}", e);
+                                error!("ActorCore::stop::error {}", e);
                                 break;
                             }
                         }
@@ -322,7 +313,7 @@ impl<R: ActorReceiver> ActorCore<R> {
                             Box::new(addr),
                         )));
                         if let Err(e) = g.tell_sys(msg) {
-                            trace!("ActorCore::stop::error {:?}", e);
+                            error!("ActorCore::stop::error {:?}", e);
                         }
                     }
                 }
@@ -343,3 +334,23 @@ impl<R: ActorReceiver> ActorCore<R> {
 
 #[derive(Debug)]
 pub(crate) struct ActorCoreCreationError;
+
+// fields accessed when feature ipc-custer is active.
+#[cfg_attr(not(feature = "ipc-cluster"), allow(dead_code))]
+pub(crate) struct RemoteActorCore<R>
+where
+    R: ActorReceiver,
+{
+    pub(crate) address: ActorWeakAddr<R>,
+    pub(crate) system: SystemWeakRef,
+}
+
+impl<R> RemoteActorCore<R>
+where
+    R: ActorReceiver,
+{
+    #[cfg(all(unix, feature = "ipc-cluster"))]
+    pub(crate) fn new(address: ActorWeakAddr<R>, system: SystemWeakRef) -> Self {
+        Self { address, system }
+    }
+}

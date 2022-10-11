@@ -1,7 +1,10 @@
+use chrono::{DateTime, Utc};
 use futures::future::Future;
+use log::error;
 use std::{
     marker::PhantomData,
     sync::{Arc, Weak},
+    time::Duration,
 };
 
 use crate::actor::{core::ActorCore, ActorAddr, ActorWeakAddr, Addr};
@@ -9,7 +12,13 @@ use crate::message::{
     handler::{MessageHandler, MessageResponseType, ResponseResult},
     Message, MessageSendError,
 };
-use crate::system::{SystemEvent, SystemMessage, SystemRef};
+use crate::system::{
+    executor::{
+        ActorExecutor, ExecutorScheduleError, ExecutorSpawnError, ExecutorTask,
+        ExecutorTaskFactory, RemoteJoinHandle, ScheduledTaskHandle,
+    },
+    SystemEvent, SystemMessage, SystemRef,
+};
 
 /// All actor types must implement this trait.
 pub trait ActorReceiver
@@ -30,8 +39,39 @@ where
 
 /// Provides services to the message handlers.
 pub trait ActorReceiverContext<R: ActorReceiver> {
-    /// Spawn a future in the system executor.
+    /// Spawn a future in the context executor.
     fn spawn_ok<Fut: 'static + Future<Output = ()> + Send>(&self, task: Fut);
+
+    /// Spawn a future in the context executor and get a handle to the output.
+    fn spawn_with_handle<Fut>(
+        &self,
+        task: Fut,
+    ) -> Result<RemoteJoinHandle<Fut::Output>, ExecutorSpawnError>
+    where
+        Fut: Future + Send + 'static,
+        Fut::Output: Send;
+
+    /// Schedule a Task once.
+    fn schedule_once(
+        &self,
+        task: ExecutorTask,
+        delay: Duration,
+    ) -> Result<ScheduledTaskHandle, ExecutorScheduleError>;
+
+    /// Schedule a Task at an Utc DateTime.
+    fn schedule_once_at(
+        &self,
+        task: ExecutorTask,
+        at: DateTime<Utc>,
+    ) -> Result<ScheduledTaskHandle, ExecutorScheduleError>;
+
+    /// Schedule a Task that repeats at regular interval.
+    fn schedule_repeat(
+        &self,
+        factory: ExecutorTaskFactory,
+        delay: Duration,
+        interval: Duration,
+    ) -> Result<ScheduledTaskHandle, ExecutorScheduleError>;
 
     /// Get the reference to the system.
     fn system(&self) -> SystemRef;
@@ -40,19 +80,18 @@ pub trait ActorReceiverContext<R: ActorReceiver> {
     fn address(&self) -> Option<ActorAddr<R>>;
 
     // pending tasks:
-    // fn schedule();
-    // fn schedule_once();
-    // fn schedule_interval();
-    // fn cancel_schedule();
-    // fn spawn_wait();
     // fn notify(); // bypass mailbox. for in-process actors.
     // fn state() -> ActorState;
 }
 
 // mod-private trait for context private functions
 pub(in crate::actor) trait ActorReceiverContextPrivate<R: ActorReceiver> {
-    fn new(system: SystemRef, address: ActorWeakAddr<R>, weak_core_ref: Weak<ActorCore<R>>)
-        -> Self;
+    fn new(
+        system: SystemRef,
+        address: ActorWeakAddr<R>,
+        weak_core_ref: Weak<ActorCore<R>>,
+        executor: ActorExecutor,
+    ) -> Self;
 }
 
 pub(crate) trait SystemHandlerContext<R: ActorReceiver> {
@@ -60,30 +99,99 @@ pub(crate) trait SystemHandlerContext<R: ActorReceiver> {
 }
 
 /// Basic Context Object for the Message Handlers
+#[derive(Clone)]
 pub struct BasicContext<R: ActorReceiver> {
     system: SystemRef,
     address: ActorWeakAddr<R>,
     core: Weak<ActorCore<R>>,
-    // [todo]: store the core-executor
+    executor: ActorExecutor,
 }
 
 impl<R: ActorReceiver> ActorReceiverContextPrivate<R> for BasicContext<R> {
-    fn new(system: SystemRef, address: ActorWeakAddr<R>, core: Weak<ActorCore<R>>) -> Self {
+    fn new(
+        system: SystemRef,
+        address: ActorWeakAddr<R>,
+        core: Weak<ActorCore<R>>,
+        executor: ActorExecutor,
+    ) -> Self {
         BasicContext {
             system,
             address,
             core,
+            executor,
         }
     }
 }
 
 impl<R: ActorReceiver> ActorReceiverContext<R> for BasicContext<R> {
+    fn spawn_with_handle<Fut>(
+        &self,
+        task: Fut,
+    ) -> Result<RemoteJoinHandle<Fut::Output>, ExecutorSpawnError>
+    where
+        Fut: Future + Send + 'static,
+        Fut::Output: Send,
+    {
+        let result = match &self.executor {
+            ActorExecutor::System => self.system.spawn_with_handle(task),
+            ActorExecutor::Pool(pool) => pool.spawn_with_handle(task),
+        };
+
+        result.map_err(|e| {
+            error!("context_spawn_error: {:#?}", e);
+            ExecutorSpawnError
+        })
+    }
+
     fn spawn_ok<Fut>(&self, task: Fut)
     where
         Fut: 'static + Future<Output = ()> + Send,
     {
-        // [todo] spawn on the correct executor for actor-pool
-        self.system.spawn_ok(task);
+        match &self.executor {
+            ActorExecutor::System => {
+                self.system.spawn_ok(task);
+            }
+            ActorExecutor::Pool(pool) => {
+                pool.spawn_ok(task);
+            }
+        }
+    }
+
+    /// Schedule a Task once.
+    fn schedule_once(
+        &self,
+        task: ExecutorTask,
+        delay: Duration,
+    ) -> Result<ScheduledTaskHandle, ExecutorScheduleError> {
+        match &self.executor {
+            ActorExecutor::System => self.system.schedule_once(task, delay),
+            ActorExecutor::Pool(pool) => pool.schedule_once(task, delay),
+        }
+    }
+
+    /// Schedule a Task at an Utc DateTime.
+    fn schedule_once_at(
+        &self,
+        task: ExecutorTask,
+        at: DateTime<Utc>,
+    ) -> Result<ScheduledTaskHandle, ExecutorScheduleError> {
+        match &self.executor {
+            ActorExecutor::System => self.system.schedule_once_at(task, at),
+            ActorExecutor::Pool(pool) => pool.schedule_once_at(task, at),
+        }
+    }
+
+    /// Schedule a Task that repeats at regular interval.
+    fn schedule_repeat(
+        &self,
+        factory: ExecutorTaskFactory,
+        delay: Duration,
+        interval: Duration,
+    ) -> Result<ScheduledTaskHandle, ExecutorScheduleError> {
+        match &self.executor {
+            ActorExecutor::System => self.system.schedule_repeat(factory, delay, interval),
+            ActorExecutor::Pool(pool) => pool.schedule_repeat(factory, delay, interval),
+        }
     }
 
     fn system(&self) -> SystemRef {
@@ -100,6 +208,10 @@ impl<R: ActorReceiver> SystemHandlerContext<R> for BasicContext<R> {
         self.core.upgrade()
     }
 }
+
+/// Context Executor Spawn Error.
+#[derive(Debug)]
+pub struct ContextSpawnError;
 
 /// ActorReceiver for a functional message handler
 pub struct FunctionHandler<F, M>
@@ -181,6 +293,6 @@ impl FnHandlerContext {
             return addr.0.tell_sys_msg(msg);
         }
 
-        Err(MessageSendError)
+        Err(MessageSendError::ErrAddrUpgradeFailed)
     }
 }

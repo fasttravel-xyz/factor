@@ -123,8 +123,12 @@ impl<R: ActorReceiver> Mailbox<R> {
         let weak_core_ref = processor.core.clone();
         if let Some(core) = weak_core_ref.upgrade() {
             if let Some(weak_ref) = core.address() {
-                let mut ctx =
-                    R::Context::new(processor.system.clone(), weak_ref, weak_core_ref.clone());
+                let mut ctx = R::Context::new(
+                    processor.system.clone(),
+                    weak_ref,
+                    weak_core_ref.clone(),
+                    core.executor(),
+                );
 
                 // process system messages on priority before user messages
                 let _ = self.process_sys_msgs(receiver, &mut ctx);

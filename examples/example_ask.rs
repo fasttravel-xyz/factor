@@ -2,8 +2,11 @@
 //! the response before proceeding.
 
 // cargo run --example example_ask
-use factor::prelude::*;
+use factor::{builder::ActorBuilderConfig, prelude::*};
 
+use serde::{Deserialize, Serialize};
+
+#[derive(Serialize, Deserialize)]
 enum Operation {
     Add(i32),
     Sub(i32),
@@ -47,7 +50,11 @@ impl MessageHandler<Operation> for OperationActor {
 
 fn main() {
     let sys = factor::init_system(Some("LocalSystem".to_string()));
-    let spawn_item = builder::ActorBuilder::create(|| OperationActor::default(), &sys);
+    let spawn_item = builder::ActorBuilder::create(
+        || OperationActor::default(),
+        &sys,
+        ActorBuilderConfig::default(),
+    );
     let addr = sys.run_actor(spawn_item.unwrap());
 
     // perform additions synchronously by awaiting.
@@ -57,13 +64,13 @@ fn main() {
             addr_moved
                 .ask(Operation::Add(i))
                 .await
-                .map_err(|e| print!("factor_ask_error: {:?} ", e))
+                .map_err(|e| println!("factor_ask_error: {:?} ", e))
                 .err();
         }
     };
 
     factor::local_spawn(add_ops)
-        .map_err(|e| print!("factor_local_spawn_error: {:?} ", e))
+        .map_err(|e| println!("factor_local_spawn_error: {:?} ", e))
         .err();
 
     // perform subtractions asynchronously.
@@ -73,11 +80,11 @@ fn main() {
             addr_moved
                 .ask(Operation::Sub(i))
                 .await
-                .map_err(|e| print!("factor_ask_error: {:?} ", e))
+                .map_err(|e| println!("factor_ask_error: {:?} ", e))
                 .err();
         };
         factor::local_spawn(sub_op)
-            .map_err(|e| print!("factor_local_spawn_error: {:?} ", e))
+            .map_err(|e| println!("factor_local_spawn_error: {:?} ", e))
             .err();
     }
 
@@ -95,9 +102,9 @@ fn main() {
             .map_err(|e| println!("error_in_ask_operation_sum: {:?}", e))
             .err();
     };
-    
+
     factor::local_spawn(check_op)
-        .map_err(|e| print!("factor_local_spawn_error: {:?} ", e))
+        .map_err(|e| println!("factor_local_spawn_error: {:?} ", e))
         .err();
 
     factor::local_run();

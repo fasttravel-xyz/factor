@@ -1,20 +1,27 @@
-use factor::prelude::*;
+use factor::{builder::ActorBuilderConfig, prelude::*};
 
+#[cfg(all(unix, feature = "ipc-cluster"))]
+use serde::{Deserialize, Serialize};
+
+#[cfg_attr(all(unix, feature = "ipc-cluster"), derive(Serialize, Deserialize))]
 struct MessageAdd(i8);
 impl Message for MessageAdd {
     type Result = i8;
 }
 
+#[cfg_attr(all(unix, feature = "ipc-cluster"), derive(Serialize, Deserialize))]
 struct MessageSubtract(i8);
 impl Message for MessageSubtract {
     type Result = i8;
 }
 
+#[cfg_attr(all(unix, feature = "ipc-cluster"), derive(Serialize, Deserialize))]
 struct MessageAddCount;
 impl Message for MessageAddCount {
     type Result = u8;
 }
 
+#[cfg_attr(all(unix, feature = "ipc-cluster"), derive(Serialize, Deserialize))]
 struct MessageSubCount;
 impl Message for MessageSubCount {
     type Result = u8;
@@ -77,7 +84,11 @@ impl MessageHandler<MessageSubCount> for OpsReceiver {
 #[tokio::test]
 async fn test_ask() {
     let sys = factor::init_system(Some("TestSystem".to_string()));
-    let spawn_item = builder::ActorBuilder::create(|| OpsReceiver::default(), &sys);
+    let spawn_item = builder::ActorBuilder::create(
+        || OpsReceiver::default(),
+        &sys,
+        ActorBuilderConfig::default(),
+    );
     let addr = sys.run_actor(spawn_item.unwrap());
 
     // 0 + 3
@@ -126,5 +137,4 @@ async fn test_ask() {
         .map(|count| assert_eq!(count, 2))
         .map_err(|e| panic!("factor_ask_error: {:?} ", e))
         .err();
-
 }
