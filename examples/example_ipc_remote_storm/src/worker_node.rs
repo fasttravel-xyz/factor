@@ -25,7 +25,7 @@ async fn run_worker() {
     let mut config = ActorBuilderConfig::default();
     config.actor_tag = Some(ROOT_ACTOR_ADDR.to_string());
     config.discovery = DiscoveryKey::Tag;
-    let spawn_item = builder::ActorBuilder::create(move || ClientActor(node_id), &system, config);
+    let spawn_item = builder::ActorBuilder::create(move |_| ClientActor(node_id), &system, config);
     let _addr = system.run_actor(spawn_item.unwrap());
 }
 

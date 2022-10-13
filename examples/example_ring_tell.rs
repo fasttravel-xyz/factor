@@ -96,8 +96,8 @@ async fn main() {
     let sys = factor::init_system(Some("TestSystem".to_string()));
 
     let now = std::time::Instant::now();
-    let spawn_item = builder::ActorBuilder::create(
-        || RingActor { next_addr: None },
+    let spawn_item = ActorBuilder::create(
+        |_| RingActor { next_addr: None },
         &sys,
         ActorBuilderConfig::default(),
     );
@@ -105,8 +105,8 @@ async fn main() {
     let mut next_addr = first_addr.clone();
     for _ in 1..args.num_nodes {
         let next_addr_moved = next_addr.clone();
-        let spawn_item = builder::ActorBuilder::create(
-            move || RingActor {
+        let spawn_item = ActorBuilder::create(
+            move |_| RingActor {
                 next_addr: Some(next_addr_moved.clone()),
             },
             &sys,

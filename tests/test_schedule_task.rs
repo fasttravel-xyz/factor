@@ -116,7 +116,7 @@ use std::pin::Pin;
 
 async fn schedule_repeat_tasks(system: &SystemRef) {
     let spawn_item =
-        builder::ActorBuilder::create(|| OpsReceiver {}, &system, ActorBuilderConfig::default());
+        builder::ActorBuilder::create(|_| OpsReceiver {}, &system, ActorBuilderConfig::default());
     let addr = system.run_actor(spawn_item.unwrap());
     let addr_moved = addr.clone();
 

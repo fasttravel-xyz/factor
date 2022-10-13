@@ -161,7 +161,7 @@ impl<R: ActorReceiver> ActorCore<R> {
     ) -> Result<(Arc<Self>, Vec<LopperTask<R>>, ActorExecutor), ActorCoreCreationError>
     where
         R: ActorReceiver,
-        Fac: Fn() -> R + Send + Sync + 'static,
+        Fac: Fn(ActorWeakAddr<R>) -> R + Send + Sync + 'static,
     {
         // executor type
         let mut executor = ActorExecutor::System;
@@ -191,7 +191,7 @@ impl<R: ActorReceiver> ActorCore<R> {
             // create the corresponding processors for the loopers
             for i in 0..act_pool_size {
                 let processor = Arc::new(Processor {
-                    receiver: Arc::new(Mutex::new(Some(factory()))),
+                    receiver: Arc::new(Mutex::new(Some(factory(address.clone())))),
                     system: system.clone(),
                     core: weak.clone(),
                 });

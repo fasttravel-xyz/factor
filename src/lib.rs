@@ -211,3 +211,7 @@ pub fn local_run() {
 pub fn local_run_until<F: Future>(future: F) -> F::Output {
     FACTOR_THREAD_RESOURCES.with(|f| f.borrow_mut().pool.as_mut().run_until(future))
 }
+
+pub fn block_on<F: Future>(future: F) -> F::Output {
+    futures::executor::block_on(future)
+}

@@ -57,7 +57,7 @@ async fn run_main() {
     let mut config = ActorBuilderConfig::default();
     config.actor_tag = Some(ROOT_ACTOR_ADDR.to_string());
     config.discovery = DiscoveryKey::Tag;
-    let spawn_item = builder::ActorBuilder::create(|| MainActor(), &system, config);
+    let spawn_item = builder::ActorBuilder::create(|_| MainActor(), &system, config);
     let addr = system.run_actor(spawn_item.unwrap());
 
     let msg = RingMessage {

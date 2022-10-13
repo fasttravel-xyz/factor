@@ -50,7 +50,7 @@ async fn run_main() {
     let mut config = ActorBuilderConfig::default();
     config.actor_tag = Some(ROOT_ACTOR_ADDR.to_string());
     config.discovery = DiscoveryKey::Tag;
-    let spawn_item = builder::ActorBuilder::create(|| ServerActor(), &system, config);
+    let spawn_item = builder::ActorBuilder::create(|_| ServerActor(), &system, config);
     let _server_addr = system.run_actor(spawn_item.unwrap());
 
     let now = std::time::Instant::now();

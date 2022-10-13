@@ -58,7 +58,7 @@ async fn test_actor_pool() {
     let mut config = ActorBuilderConfig::default();
     config.pool_size = Some(2);
 
-    let spawn_item = builder::ActorBuilder::create_pool(|| OpsReceiver {}, &system, config);
+    let spawn_item = builder::ActorBuilder::create_pool(|_| OpsReceiver {}, &system, config);
     let addr = system.run_actor(spawn_item.unwrap());
     let msg_addr = addr.message_addr::<MessageLoop>();
     let ops_addr = addr.message_addr::<MessageAdd>();

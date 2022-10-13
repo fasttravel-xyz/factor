@@ -49,7 +49,7 @@ impl MessageHandler<MessageSubtract> for OpsReceiver {
 async fn test_receiver() {
     let sys = factor::init_system(Some("TestSystem".to_string()));
     let spawn_item =
-        builder::ActorBuilder::create(|| OpsReceiver {}, &sys, ActorBuilderConfig::default());
+        builder::ActorBuilder::create(|_| OpsReceiver {}, &sys, ActorBuilderConfig::default());
     let addr = sys.run_actor(spawn_item.unwrap());
 
     // 0 + 3

@@ -49,7 +49,7 @@ impl ActorBuilder {
     ) -> Option<ActorSpawnItem<R>>
     where
         R: ActorReceiver,
-        Fac: Fn() -> R + Send + Sync + 'static,
+        Fac: Fn(ActorWeakAddr<R>) -> R + Send + Sync + 'static,
     {
         if let Some(_) = config.pool_size {
             warn!("creation of pool not allowed through this method. use create_pool()");
@@ -73,7 +73,7 @@ impl ActorBuilder {
     ) -> Option<ActorSpawnItem<R>>
     where
         R: ActorReceiver,
-        Fac: Fn() -> R + Send + Sync + 'static,
+        Fac: Fn(ActorWeakAddr<R>) -> R + Send + Sync + 'static,
     {
         if let Some(_) = config.pool_size {
             match Self::create_actor(factory, &ActorGuardianType::User, system, config) {
@@ -98,7 +98,7 @@ impl ActorBuilder {
         F: (Fn(M, &mut FnHandlerContext) -> M::Result) + Send + Sync + 'static + Clone,
         M: Message + Send + 'static,
     {
-        let factory = move || FunctionHandler::new(f.clone());
+        let factory = move |_| FunctionHandler::new(f.clone());
         match Self::create_actor(
             factory,
             &ActorGuardianType::User,
@@ -144,7 +144,7 @@ impl ActorBuilder {
     ) -> Result<ActorSpawnItem<R>, ActorCreationError>
     where
         R: ActorReceiver,
-        Fac: Fn() -> R + Send + Sync + 'static,
+        Fac: Fn(ActorWeakAddr<R>) -> R + Send + Sync + 'static,
     {
         let mut looper_tasks: Vec<LopperTask<R>> = Vec::new();
         let mut executor_type: ActorExecutor = ActorExecutor::System;

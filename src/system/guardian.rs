@@ -121,7 +121,7 @@ impl ActorGuardian {
                 ActorGuardian::Remote(_inner) => _g_type = ActorGuardianType::Remote,
             }
 
-            let factory = move || GuardianReceiver(handle.clone());
+            let factory = move |_| GuardianReceiver(handle.clone());
             match ActorBuilder::create_actor(
                 factory,
                 &_g_type,

@@ -229,11 +229,11 @@ async fn test_handshake() {
     let sys = factor::init_system(Some("TestSystem".to_string()));
 
     let srv_spawn =
-        builder::ActorBuilder::create(|| HandshakeServer {}, &sys, ActorBuilderConfig::default());
+        builder::ActorBuilder::create(|_| HandshakeServer {}, &sys, ActorBuilderConfig::default());
     let server = sys.run_actor(srv_spawn.unwrap());
 
     let cl_spawn = builder::ActorBuilder::create(
-        move || HandshakeClient::new(server.clone()),
+        move |_| HandshakeClient::new(server.clone()),
         &sys,
         ActorBuilderConfig::default(),
     );

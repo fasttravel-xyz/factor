@@ -85,7 +85,7 @@ impl MessageHandler<MessageSubCount> for OpsReceiver {
 async fn test_ask() {
     let sys = factor::init_system(Some("TestSystem".to_string()));
     let spawn_item = builder::ActorBuilder::create(
-        || OpsReceiver::default(),
+        |_| OpsReceiver::default(),
         &sys,
         ActorBuilderConfig::default(),
     );

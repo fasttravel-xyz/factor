@@ -50,8 +50,8 @@ impl MessageHandler<Operation> for OperationActor {
 
 fn main() {
     let sys = factor::init_system(Some("LocalSystem".to_string()));
-    let spawn_item = builder::ActorBuilder::create(
-        || OperationActor::default(),
+    let spawn_item = ActorBuilder::create(
+        |_| OperationActor::default(),
         &sys,
         ActorBuilderConfig::default(),
     );

@@ -109,7 +109,7 @@ async fn test_init_stop() {
     let sys = factor::init_system(Some("TestSystem".to_string()));
 
     let mut spawn_item = builder::ActorBuilder::create(
-        || OpsReceiver::default(),
+        |_| OpsReceiver::default(),
         &sys,
         ActorBuilderConfig::default(),
     );
@@ -122,7 +122,7 @@ async fn test_init_stop() {
         .err();
 
     spawn_item = builder::ActorBuilder::create(
-        || OpsReceiver::default(),
+        |_| OpsReceiver::default(),
         &sys,
         ActorBuilderConfig::default(),
     );
