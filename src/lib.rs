@@ -49,6 +49,7 @@ pub use system::{
 
 #[cfg(all(unix, feature = "ipc-cluster"))]
 pub use crate::{
+    actor::MessageClusterAddr,
     message::{
         handler::{
             MessageClusterHandler, MessageClusterResponse, ReplyToCluster, ReplyToRefCluster,
@@ -72,7 +73,7 @@ pub mod prelude {
         actor::{
             builder::{self, ActorBuilder, ActorBuilderConfig},
             receiver::{ActorReceiver, ActorReceiverContext, BasicContext, FnHandlerContext},
-            ActorAddr, ActorUniqueKey, ActorWeakAddr, DiscoveryKey,
+            ActorAddr, ActorUniqueKey, ActorWeakAddr, DiscoveryKey, MessageAddr,
         },
         message::{
             handler::{MessageHandler, MessageResponseType, ResponseFuture, ResponseResult},
@@ -86,6 +87,7 @@ pub mod prelude {
     #[doc(hidden)]
     #[cfg(all(unix, feature = "ipc-cluster"))]
     pub use crate::{
+        actor::MessageClusterAddr,
         message::{handler::MessageClusterHandler, MessageCluster},
         system::cluster::{NodeCreationConfig, NodeId, RemoteMessageTypeProvider},
     };
