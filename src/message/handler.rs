@@ -77,9 +77,9 @@ impl<M: Message + 'static, R: ActorReceiver> MessageResponse<M, R>
     }
 }
 
-/// Trait to be implemented to handle specific messages.
+/// Trait to be implemented to handle specific cluster-messages (messages those
+/// could be sent to both local and remote actors).
 #[cfg(all(unix, feature = "ipc-cluster"))]
-
 pub trait MessageClusterHandler<M>
 where
     M: MessageCluster,

@@ -21,12 +21,11 @@ use crate::system::SystemMessage;
 use crate::message::handler::MessageClusterHandler;
 
 /// All message types must implement this trait.
-// #[cfg(not(feature = "ipc-cluster"))]
 pub trait Message {
     type Result: 'static + Send;
 }
 
-/// All message types must implement this trait.
+/// All cluster-message(messages to be passed between ipc-nodes) types must implement this trait.
 #[cfg(all(unix, feature = "ipc-cluster"))]
 pub trait MessageCluster: for<'a> Deserialize<'a> + Serialize {
     type Result: 'static + Send + for<'a> Deserialize<'a> + Serialize;
@@ -46,45 +45,6 @@ pub(crate) trait MessageClusterSend<M: MessageCluster + Send + 'static>: Send {
 
     /// Send message to the actor mailbox and receive a response back.
     async fn ask_addr(&self, msg: M) -> Result<M::Result, MessageSendError>;
-}
-
-#[cfg(all(unix, feature = "ipc-cluster"))]
-#[async_trait]
-impl<R, M> MessageClusterSend<M> for MessageSender<R>
-where
-    R: ActorReceiver + MessageClusterHandler<M> + 'static,
-    M: MessageCluster + Send + 'static,
-    M::Result: 'static,
-{
-    fn tell_addr(&self, msg: M) -> Result<(), MessageSendError> {
-        match self {
-            MessageSender::LocalSender { core } => {
-                let envelope = Envelope::new_cluster(msg, None);
-                return core.send(envelope).map_err(|e| {
-                    error!("MessageSender::tell::error {:?}", e);
-                    e
-                });
-            }
-            MessageSender::RemoteSender { core } => return self.remote_tell_addr(msg, core),
-        }
-    }
-
-    async fn ask_addr(&self, msg: M) -> Result<M::Result, MessageSendError> {
-        let (tx, rx) = oneshot::channel::<M::Result>();
-
-        match self {
-            MessageSender::LocalSender { core } => {
-                let envelope = Envelope::new_cluster(msg, Some(tx));
-                if let Err(e) = core.send(envelope) {
-                    error!("MessageSender::ask::error {:?}", e);
-                    return Err(e);
-                } else {
-                    return rx.await.map_err(|e| e.into());
-                }
-            }
-            MessageSender::RemoteSender { core } => return self.remote_ask_addr(msg, core).await,
-        }
-    }
 }
 
 /// Trait for the actor Typed Message Sender.
@@ -152,6 +112,45 @@ where
     }
 }
 
+#[cfg(all(unix, feature = "ipc-cluster"))]
+#[async_trait]
+impl<R, M> MessageClusterSend<M> for MessageSender<R>
+where
+    R: ActorReceiver + MessageClusterHandler<M> + 'static,
+    M: MessageCluster + Send + 'static,
+    M::Result: 'static,
+{
+    fn tell_addr(&self, msg: M) -> Result<(), MessageSendError> {
+        match self {
+            MessageSender::LocalSender { core } => {
+                let envelope = Envelope::new_cluster(msg, None);
+                return core.send(envelope).map_err(|e| {
+                    error!("MessageSender::tell::error {:?}", e);
+                    e
+                });
+            }
+            MessageSender::RemoteSender { core } => return self.remote_tell_addr(msg, core),
+        }
+    }
+
+    async fn ask_addr(&self, msg: M) -> Result<M::Result, MessageSendError> {
+        let (tx, rx) = oneshot::channel::<M::Result>();
+
+        match self {
+            MessageSender::LocalSender { core } => {
+                let envelope = Envelope::new_cluster(msg, Some(tx));
+                if let Err(e) = core.send(envelope) {
+                    error!("MessageSender::ask::error {:?}", e);
+                    return Err(e);
+                } else {
+                    return rx.await.map_err(|e| e.into());
+                }
+            }
+            MessageSender::RemoteSender { core } => return self.remote_ask_addr(msg, core).await,
+        }
+    }
+}
+
 impl<R> MessageSender<R>
 where
     R: ActorReceiver,
@@ -187,7 +186,6 @@ where
         Ok(())
     }
 
-    // #[cfg(not(feature = "ipc-cluster"))]
     fn remote_tell<M>(
         &self,
         _msg: M,
@@ -232,7 +230,6 @@ where
         Err(MessageSendError::ErrRemoteAskFailed)
     }
 
-    // #[cfg(not(feature = "ipc-cluster"))]
     async fn remote_ask<M>(
         &self,
         _msg: M,
@@ -243,7 +240,7 @@ where
         M: Message + Send + 'static,
         M::Result: 'static,
     {
-        error!("remote_ask_not_activated. required feature=ipc-cluster");
+        error!("this_is_a_remote_addr_use_ask_addr_instead_of_ask");
         Err(MessageSendError::ErrRemoteAskFailed)
     }
 }

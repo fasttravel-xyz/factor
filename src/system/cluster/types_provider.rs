@@ -220,6 +220,8 @@ impl RemoteMessageTypeProvider {
             if tinfo_json.is_ok() && r_msg_json.is_ok() {
                 return Some((tinfo_json.unwrap(), r_msg_json.unwrap()));
             }
+        } else {
+            error!("IPC-ERROR: remote_send_failed_actor_type_or_message_type_not_registered_with_remote_type_provider");
         }
 
         None
@@ -237,6 +239,8 @@ impl RemoteMessageTypeProvider {
 
         if let Some(dispatcher) = self.dispatchers.get(&t_info_key) {
             return dispatcher.decode_and_dispatch(decoder, method).await;
+        } else {
+            error!("IPC-ERROR: remote_receive_failed_actor_type_or_message_type_not_registered_with_remote_type_provider");
         }
 
         None
