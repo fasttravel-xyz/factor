@@ -69,11 +69,15 @@ fn check_socket_path(bind_addr: &str) {
 }
 
 /// Initialize the cluster-node per process.
-pub(crate) async fn init_cluster(
+pub(crate) async fn init_cluster<C>(
     node_id: NodeId,
     name: Option<String>,
     r_msg_type_provider: RemoteMessageTypeProvider,
-) -> system::SystemRef {
+    closure: C,
+) -> system::SystemRef
+where
+    C: FnOnce(system::SystemRef) + Send + 'static,
+{
     let cluster = PROCESS_CLUSTER_NODE.get_or_init(move || {
         let tokio_rt = tokio::runtime::Handle::current();
 
@@ -88,7 +92,7 @@ pub(crate) async fn init_cluster(
     let cluster_moved = cluster.clone();
 
     let task = async move {
-        run_node_server(&node_id, system_moved, cluster_moved).await;
+        run_node_server(&node_id, system_moved, cluster_moved, closure).await;
     };
     cluster
         .tokio_rt()
@@ -99,7 +103,10 @@ pub(crate) async fn init_cluster(
     cluster.system()
 }
 
-async fn run_node_server(node_id: &NodeId, _system: SystemRef, node: ClusterNode) {
+async fn run_node_server<C>(node_id: &NodeId, system: SystemRef, node: ClusterNode, closure: C)
+where
+    C: FnOnce(system::SystemRef),
+{
     let bind_addr = get_node_bind_addr(&node_id);
 
     trace!("run_node_server_bind_addr: {}", bind_addr);
@@ -123,7 +130,10 @@ async fn run_node_server(node_id: &NodeId, _system: SystemRef, node: ClusterNode
         }
     });
 
-    // if not the main node, notify the main node. [todo] schedule a heartbeat using the _system.
+    // run the initialization closure before the first ping.
+    (closure)(system.clone());
+
+    // if not the main node, notify the main node. [todo] schedule a heartbeat using the system.
     let main_node = 0;
     if node_id > &main_node {
         if let Some(client) = node.get_node_client(main_node).await {

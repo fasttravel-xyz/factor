@@ -1,4 +1,5 @@
 use dashmap::DashMap;
+use log::trace;
 
 use crate::actor::{ActorId, Addr};
 
@@ -23,6 +24,12 @@ impl Receptionist {
     }
 
     pub(super) fn set_address(&self, key: &str, addr: Addr) {
+        trace!(
+            "receptionist_set_address_key {} _id_ {:?}",
+            key,
+            addr.get_id()
+        );
+
         self.addr_book.insert(key.to_string(), addr);
     }
 }

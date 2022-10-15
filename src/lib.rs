@@ -171,7 +171,24 @@ pub async fn init_cluster(
     name: Option<String>,
     r_msg_type_provider: RemoteMessageTypeProvider,
 ) -> system::SystemRef {
-    system::cluster::init_cluster(node_id, name, r_msg_type_provider).await
+    system::cluster::init_cluster(node_id, name, r_msg_type_provider, |_| {}).await
+}
+
+/// Initialize the cluster-node and system per process when running in cluster configuration.
+/// Also executes the provided closure before sending the first ping to the main_node. This
+/// allows the user to initialize or create actors during init and confirming worker_node spawn
+/// only after all the initializations are complete.
+#[cfg(all(unix, feature = "ipc-cluster"))]
+pub async fn init_cluster_with_closure<C>(
+    node_id: u16,
+    name: Option<String>,
+    r_msg_type_provider: RemoteMessageTypeProvider,
+    closure: C,
+) -> system::SystemRef
+where
+    C: FnOnce(system::SystemRef) + Send + 'static,
+{
+    system::cluster::init_cluster(node_id, name, r_msg_type_provider, closure).await
 }
 
 /// Initialize the system per process.

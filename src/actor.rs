@@ -55,6 +55,9 @@ where
     M::Result: Send;
 // [todo][low-priority]: Make MessageAddr Serializable, by storing the typeid of R.
 
+/// Address/Reference of an actor that hides the actor type and is only dependent on message type.
+/// Provides the basic services related to a cluster-message(a message that could be sent to
+/// both local and ipc-remote nodes) of a specific type.
 #[cfg(all(unix, feature = "ipc-cluster"))]
 pub struct MessageClusterAddr<M>(pub Box<dyn ActorMessageClusterReceiver<M> + Send + Sync>)
 where
@@ -396,7 +399,7 @@ impl<R: ActorReceiver> ActorAddr<R> {
         self.into()
     }
 
-    /// get the MessageAddr of the actor for a message type
+    /// get the MessageClusterAddr of the actor for a cluster-message type
     #[cfg(all(unix, feature = "ipc-cluster"))]
     pub fn message_cluster_addr<M>(&self) -> MessageClusterAddr<M>
     where
@@ -412,7 +415,12 @@ impl<R: ActorReceiver> ActorAddr<R> {
         ActorWeakAddr(Arc::downgrade(&self.0))
     }
 
-    /// Send a message to the actor.
+    /// Send a message to the actor (only local).
+    /// 
+    /// NOTE: If we have a ActorAddr of a remote actor, this method will
+    /// return an error. For remote ActorAddr use tell_addr() or the
+    /// tell() method of MessageClusterAddr, as these two methods work for 
+    /// both local and remote actors.
     pub fn tell<M>(&self, msg: M) -> Result<(), MessageSendError>
     where
         R: ActorReceiver + MessageHandler<M> + 'static,
@@ -426,7 +434,12 @@ impl<R: ActorReceiver> ActorAddr<R> {
         }
     }
 
-    /// Send a message and receive a response from the actor.
+    /// Send a message and receive a response from the actor (only local).
+    /// 
+    /// NOTE: If we have a ActorAddr of a remote actor, this method will
+    /// return an error. For remote ActorAddr use ask_addr() or the
+    /// ask() method of MessageClusterAddr, as these two methods work for 
+    /// both local and remote actors.
     pub async fn ask<M>(&self, msg: M) -> Result<M::Result, MessageSendError>
     where
         R: ActorReceiver + MessageHandler<M> + 'static,
@@ -449,7 +462,7 @@ impl<R: ActorReceiver> ActorAddr<R> {
         }
     }
 
-    /// Send a message to the actor.
+    /// Send a cluster-message to the actor(local or remote).
     #[cfg(all(unix, feature = "ipc-cluster"))]
     pub fn tell_addr<M>(&self, msg: M) -> Result<(), MessageSendError>
     where
@@ -464,7 +477,7 @@ impl<R: ActorReceiver> ActorAddr<R> {
         }
     }
 
-    /// Send a message and receive a response from the actor.
+    /// Send a cluster-message and receive a response from the actor(local or remote).
     #[cfg(all(unix, feature = "ipc-cluster"))]
     pub async fn ask_addr<M>(&self, msg: M) -> Result<M::Result, MessageSendError>
     where

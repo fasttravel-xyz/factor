@@ -416,6 +416,8 @@ impl IpcNode for ClusterNode {
     }
 
     async fn get_remote_addr(self, _: Context, key: String) -> Option<ActorId> {
+        trace!("ipc_node_get_remote_addr_key: {}", key);
+
         self.0.receptionist.get_actor_id(key.as_str())
     }
 
