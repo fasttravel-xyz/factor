@@ -8,7 +8,7 @@ pub struct MockActor();
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct MockMessage(pub String);
 
-impl Message for MockMessage {
+impl MessageCluster for MockMessage {
     type Result = Option<String>;
 }
 
@@ -16,8 +16,8 @@ impl ActorReceiver for MockActor {
     type Context = BasicContext<Self>;
 }
 
-impl MessageHandler<MockMessage> for MockActor {
-    type Result = MessageResponseType<<MockMessage as Message>::Result>;
+impl MessageClusterHandler<MockMessage> for MockActor {
+    type Result = MessageResponseType<<MockMessage as MessageCluster>::Result>;
 
     fn handle(&mut self, _msg: MockMessage, _ctx: &mut Self::Context) -> Self::Result {
         println!("factor_message_from_main: {:#?} ", _msg);

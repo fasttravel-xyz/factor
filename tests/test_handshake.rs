@@ -1,5 +1,3 @@
-#![cfg(not(feature = "ipc-cluster"))]
-
 use factor::{builder::ActorBuilderConfig, prelude::*};
 use futures::channel::oneshot;
 use std::sync::atomic::{AtomicU16, AtomicU8, Ordering};

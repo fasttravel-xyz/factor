@@ -66,7 +66,7 @@ async fn run_main() {
         };
 
         client_addr
-            .tell(start_storm)
+            .tell_addr(start_storm)
             .expect("client_tell_start_storm_failed");
     }
     println!("time_taken_to_schedule_storm: {:#?}", now.elapsed());

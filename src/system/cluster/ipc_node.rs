@@ -13,7 +13,7 @@ use tokio::net::UnixStream;
 use tokio::runtime::Handle as TokioRtHandle;
 
 use crate::actor::{ActorId, DiscoveryKey};
-use crate::{ActorAddr, ActorReceiver, Addr, Message, MessageHandler, SystemRef};
+use crate::{ActorAddr, ActorReceiver, Addr, MessageCluster, MessageClusterHandler, SystemRef};
 
 use super::get_node_bind_addr;
 use super::receptionist::*;
@@ -103,8 +103,8 @@ impl RemoteNodeClient {
 
     pub(crate) async fn tell<R, M>(&self, addr: ActorAddr<R>, msg: M)
     where
-        R: ActorReceiver + MessageHandler<M> + 'static,
-        M: Message + Send + 'static,
+        R: ActorReceiver + MessageClusterHandler<M> + 'static,
+        M: MessageCluster + Send + 'static,
     {
         let msg_json = self.r_msg_type_provider.encode(addr, msg).unwrap();
         let _ret = self
@@ -115,8 +115,8 @@ impl RemoteNodeClient {
 
     pub(crate) async fn ask<R, M>(&self, addr: ActorAddr<R>, msg: M) -> Result<M::Result, ()>
     where
-        R: ActorReceiver + MessageHandler<M> + 'static,
-        M: Message + Send + 'static,
+        R: ActorReceiver + MessageClusterHandler<M> + 'static,
+        M: MessageCluster + Send + 'static,
         M::Result: 'static,
     {
         let msg_json = self.r_msg_type_provider.encode(addr, msg).unwrap();

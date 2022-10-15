@@ -26,11 +26,11 @@ pub struct StartStorm {
     pub max_rps: u32,
 }
 
-impl Message for StormMessage {
+impl MessageCluster for StormMessage {
     type Result = u32;
 }
 
-impl Message for StartStorm {
+impl MessageCluster for StartStorm {
     type Result = ();
 }
 
@@ -38,8 +38,8 @@ impl ActorReceiver for ClientActor {
     type Context = BasicContext<Self>;
 }
 
-impl MessageHandler<StartStorm> for ClientActor {
-    type Result = MessageResponseType<<StartStorm as Message>::Result>;
+impl MessageClusterHandler<StartStorm> for ClientActor {
+    type Result = MessageResponseType<<StartStorm as MessageCluster>::Result>;
 
     fn handle(&mut self, msg: StartStorm, ctx: &mut Self::Context) -> Self::Result {
         // println!("client_start_storm_received: {:#?} ", msg);
@@ -62,7 +62,7 @@ impl MessageHandler<StartStorm> for ClientActor {
                 let storm_msg = StormMessage { end_test, sum };
 
                 sum = server_addr
-                    .ask(storm_msg)
+                    .ask_addr(storm_msg)
                     .await
                     .expect("server_addr_ask_failed");
             }
@@ -85,8 +85,8 @@ impl ActorReceiver for ServerActor {
     type Context = BasicContext<Self>;
 }
 
-impl MessageHandler<StormMessage> for ServerActor {
-    type Result = MessageResponseType<<StormMessage as Message>::Result>;
+impl MessageClusterHandler<StormMessage> for ServerActor {
+    type Result = MessageResponseType<<StormMessage as MessageCluster>::Result>;
 
     fn handle(&mut self, msg: StormMessage, _ctx: &mut Self::Context) -> Self::Result {
         // println!("server_storm_message_received: {:#?} ", msg);
