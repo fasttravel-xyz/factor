@@ -17,16 +17,74 @@ use crate::message::{
 };
 use crate::system::SystemMessage;
 
+#[cfg(all(unix, feature = "ipc-cluster"))]
+use crate::message::handler::MessageClusterHandler;
+
 /// All message types must implement this trait.
-#[cfg(not(feature = "ipc-cluster"))]
+// #[cfg(not(feature = "ipc-cluster"))]
 pub trait Message {
     type Result: 'static + Send;
 }
 
 /// All message types must implement this trait.
 #[cfg(all(unix, feature = "ipc-cluster"))]
-pub trait Message: for<'a> Deserialize<'a> + Serialize {
+pub trait MessageCluster: for<'a> Deserialize<'a> + Serialize {
     type Result: 'static + Send + for<'a> Deserialize<'a> + Serialize;
+}
+
+/// Trait for the actor Typed Message Sender.
+#[cfg(all(unix, feature = "ipc-cluster"))]
+#[async_trait]
+pub(crate) trait MessageClusterSend<M: MessageCluster + Send + 'static>: Send {
+    // CHANGELOG [15/AUG/2022]: The trait has the generic `M: Message` and the
+    // implementing struct has the generic `R: ActorReceiver`. This way trait-objects
+    // of MessageSend could act as handlers/recipients of a single message type M.
+    // Keeping the generic M on the methods prevents creation of trait-object.
+
+    /// Send message to the actor mailbox.
+    fn tell_addr(&self, msg: M) -> Result<(), MessageSendError>;
+
+    /// Send message to the actor mailbox and receive a response back.
+    async fn ask_addr(&self, msg: M) -> Result<M::Result, MessageSendError>;
+}
+
+#[cfg(all(unix, feature = "ipc-cluster"))]
+#[async_trait]
+impl<R, M> MessageClusterSend<M> for MessageSender<R>
+where
+    R: ActorReceiver + MessageClusterHandler<M> + 'static,
+    M: MessageCluster + Send + 'static,
+    M::Result: 'static,
+{
+    fn tell_addr(&self, msg: M) -> Result<(), MessageSendError> {
+        match self {
+            MessageSender::LocalSender { core } => {
+                let envelope = Envelope::new_cluster(msg, None);
+                return core.send(envelope).map_err(|e| {
+                    error!("MessageSender::tell::error {:?}", e);
+                    e
+                });
+            }
+            MessageSender::RemoteSender { core } => return self.remote_tell_addr(msg, core),
+        }
+    }
+
+    async fn ask_addr(&self, msg: M) -> Result<M::Result, MessageSendError> {
+        let (tx, rx) = oneshot::channel::<M::Result>();
+
+        match self {
+            MessageSender::LocalSender { core } => {
+                let envelope = Envelope::new_cluster(msg, Some(tx));
+                if let Err(e) = core.send(envelope) {
+                    error!("MessageSender::ask::error {:?}", e);
+                    return Err(e);
+                } else {
+                    return rx.await.map_err(|e| e.into());
+                }
+            }
+            MessageSender::RemoteSender { core } => return self.remote_ask_addr(msg, core).await,
+        }
+    }
 }
 
 /// Trait for the actor Typed Message Sender.
@@ -99,10 +157,14 @@ where
     R: ActorReceiver,
 {
     #[cfg(all(unix, feature = "ipc-cluster"))]
-    fn remote_tell<M>(&self, msg: M, core: &Arc<RemoteActorCore<R>>) -> Result<(), MessageSendError>
+    fn remote_tell_addr<M>(
+        &self,
+        msg: M,
+        core: &Arc<RemoteActorCore<R>>,
+    ) -> Result<(), MessageSendError>
     where
-        R: MessageHandler<M> + 'static,
-        M: Message + Send + 'static,
+        R: MessageClusterHandler<M> + 'static,
+        M: MessageCluster + Send + 'static,
         M::Result: 'static,
     {
         let addr = core
@@ -125,7 +187,7 @@ where
         Ok(())
     }
 
-    #[cfg(not(feature = "ipc-cluster"))]
+    // #[cfg(not(feature = "ipc-cluster"))]
     fn remote_tell<M>(
         &self,
         _msg: M,
@@ -136,19 +198,19 @@ where
         M: Message + Send + 'static,
         M::Result: 'static,
     {
-        error!("remote_tell_not_activated. required feature=ipc-cluster");
+        error!("this_is_a_remote_addr_use_tell_addr_instead_of_tell");
         Err(MessageSendError::ErrRemoteTellFailed)
     }
 
     #[cfg(all(unix, feature = "ipc-cluster"))]
-    async fn remote_ask<M>(
+    async fn remote_ask_addr<M>(
         &self,
         msg: M,
         core: &Arc<RemoteActorCore<R>>,
     ) -> Result<M::Result, MessageSendError>
     where
-        R: MessageHandler<M> + 'static,
-        M: Message + Send + 'static,
+        R: MessageClusterHandler<M> + 'static,
+        M: MessageCluster + Send + 'static,
         M::Result: 'static,
     {
         let addr = core
@@ -170,7 +232,7 @@ where
         Err(MessageSendError::ErrRemoteAskFailed)
     }
 
-    #[cfg(not(feature = "ipc-cluster"))]
+    // #[cfg(not(feature = "ipc-cluster"))]
     async fn remote_ask<M>(
         &self,
         _msg: M,

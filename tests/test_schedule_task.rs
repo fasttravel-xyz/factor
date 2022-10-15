@@ -155,17 +155,20 @@ async fn schedule_repeat_tasks(system: &SystemRef) {
     assert_eq!(repeat_sum, 15, "scheduled_once_task_failed_to_update_sum");
 }
 
-
 async fn spawn_with_handle(system: &SystemRef) {
-    let remote_handle_1 = system.spawn_with_handle(async {
-        std::thread::sleep(Duration::from_millis(100));
-        6789
-    }).expect("system_spawn_with_handle_failed");
+    let remote_handle_1 = system
+        .spawn_with_handle(async {
+            std::thread::sleep(Duration::from_millis(100));
+            6789
+        })
+        .expect("system_spawn_with_handle_failed");
 
-    let remote_handle_2 = system.spawn_with_handle(async {
-        std::thread::sleep(Duration::from_millis(500));
-        1234
-    }).expect("system_spawn_with_handle_failed");
+    let remote_handle_2 = system
+        .spawn_with_handle(async {
+            std::thread::sleep(Duration::from_millis(500));
+            1234
+        })
+        .expect("system_spawn_with_handle_failed");
 
     let ans2 = remote_handle_2.await;
     let ans1 = remote_handle_1.await;

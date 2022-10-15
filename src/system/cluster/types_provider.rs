@@ -8,7 +8,7 @@ use std::marker::PhantomData;
 
 use crate::actor::ActorId;
 use crate::system::resolve_actor_addr_in_current_node;
-use crate::{ActorAddr, ActorReceiver, Message, MessageHandler};
+use crate::{ActorAddr, ActorReceiver, MessageCluster, MessageClusterHandler};
 
 pub(super) enum DispatchMethod {
     Tell,
@@ -20,11 +20,11 @@ pub(super) enum DispatchMethod {
 #[derive(Serialize, Deserialize)]
 pub(super) struct RemoteMsg<M>
 where
-    M: Message + Send + 'static,
+    M: MessageCluster + Send + 'static,
 {
     pub(super) act_id: ActorId,
 
-    #[serde(bound(deserialize = "M: Message"))]
+    #[serde(bound(deserialize = "M: MessageCluster"))]
     pub(super) msg: M,
 }
 
@@ -39,8 +39,8 @@ impl RemoteMessageDecoder {
 
     async fn decode_and_dispatch<R, M>(self, method: DispatchMethod) -> Option<M::Result>
     where
-        R: ActorReceiver + MessageHandler<M> + 'static,
-        M: Message + Send + 'static,
+        R: ActorReceiver + MessageClusterHandler<M> + 'static,
+        M: MessageCluster + Send + 'static,
         M::Result: 'static,
     {
         match serde_json::from_str::<RemoteMsg<M>>(&self.r_msg_json) {
@@ -49,10 +49,10 @@ impl RemoteMessageDecoder {
 
                 match method {
                     DispatchMethod::Tell => {
-                        let _ = addr.tell(remote_msg.msg);
+                        let _ = addr.tell_addr(remote_msg.msg);
                     }
                     DispatchMethod::Ask => {
-                        return addr.ask(remote_msg.msg).await.ok();
+                        return addr.ask_addr(remote_msg.msg).await.ok();
                     }
                     _ => {}
                 }
@@ -106,8 +106,8 @@ struct RemoteMessageTypeDecoder<R, M> {
 
 impl<R, M> RemoteMessageTypeDecoder<R, M>
 where
-    R: ActorReceiver + MessageHandler<M> + 'static + Clone + Send + Sync,
-    M: Message + Send + 'static + Clone + Sync,
+    R: ActorReceiver + MessageClusterHandler<M> + 'static + Clone + Send + Sync,
+    M: MessageCluster + Send + 'static + Clone + Sync,
     M::Result: 'static,
 {
     fn new() -> Self {
@@ -121,8 +121,8 @@ where
 #[async_trait]
 impl<R, M> RemoteMessageDispatcher for RemoteMessageTypeDecoder<R, M>
 where
-    R: ActorReceiver + MessageHandler<M> + 'static + Clone + Send + Sync,
-    M: Message + Send + 'static + Clone + Sync,
+    R: ActorReceiver + MessageClusterHandler<M> + 'static + Clone + Send + Sync,
+    M: MessageCluster + Send + 'static + Clone + Sync,
     M::Result: 'static,
 {
     async fn decode_and_dispatch(
@@ -163,8 +163,8 @@ impl RemoteMessageTypeProvider {
 
     pub fn register<R, M>(&mut self)
     where
-        R: ActorReceiver + MessageHandler<M> + 'static + Clone + Sync + Send,
-        M: Message + Send + 'static + Clone + Sync + Send,
+        R: ActorReceiver + MessageClusterHandler<M> + 'static + Clone + Sync + Send,
+        M: MessageCluster + Send + 'static + Clone + Sync + Send,
         M::Result: 'static,
     {
         let a_t = TypeId::of::<R>();
@@ -196,8 +196,8 @@ impl RemoteMessageTypeProvider {
 
     pub(super) fn encode<R, M>(&self, addr: ActorAddr<R>, msg: M) -> Option<(String, String)>
     where
-        R: ActorReceiver + MessageHandler<M> + 'static,
-        M: Message + Send + 'static,
+        R: ActorReceiver + MessageClusterHandler<M> + 'static,
+        M: MessageCluster + Send + 'static,
     {
         let a_t = TypeId::of::<R>();
         let m_t = TypeId::of::<M>();

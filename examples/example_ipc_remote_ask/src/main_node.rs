@@ -24,11 +24,11 @@ async fn run_main() {
         .get_remote_addr::<MockActor>(node_id, "node_root_actor")
         .await
     {
-        addr.tell(MockMessage("... Hello From Main ...".to_owned()))
+        addr.tell_addr(MockMessage("... Hello From Main ...".to_owned()))
             .expect("remote_tell_failed");
 
         let answer = addr
-            .ask(MockMessage("... Query From Main ...".to_owned()))
+            .ask_addr(MockMessage("... Query From Main ...".to_owned()))
             .await
             .expect("remote_ask_failed");
 

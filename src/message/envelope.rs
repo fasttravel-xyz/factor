@@ -11,6 +11,12 @@ use crate::message::{
 };
 use crate::system::SystemMessage;
 
+#[cfg(all(unix, feature = "ipc-cluster"))]
+use crate::message::{
+    handler::{MessageClusterHandler, MessageClusterResponse, ReplyToRefCluster},
+    MessageCluster,
+};
+
 /// Trait representing a payload inside an Envelope.
 pub(crate) trait Payload<R: ActorReceiver> {
     fn handle(&mut self, actor: &mut R, ctx: &mut <R as ActorReceiver>::Context);
@@ -35,11 +41,59 @@ impl<R: ActorReceiver> Envelope<R> {
             }),
         }
     }
+
+    #[cfg(all(unix, feature = "ipc-cluster"))]
+    pub(crate) fn new_cluster<M>(msg: M, tx: Option<oneshot::Sender<M::Result>>) -> Self
+    where
+        R: MessageClusterHandler<M>,
+        M: MessageCluster + Send + 'static,
+        M::Result: Send,
+    {
+        Envelope {
+            data: Box::new(MessageClusterEnvelope {
+                reply_to: Some(ReplyToRefCluster { tx }),
+                msg: Some(msg),
+            }),
+        }
+    }
 }
 
 impl<R: ActorReceiver> Payload<R> for Envelope<R> {
     fn handle(&mut self, actor: &mut R, ctx: &mut <R as ActorReceiver>::Context) {
         self.data.handle(actor, ctx);
+    }
+}
+
+#[cfg(all(unix, feature = "ipc-cluster"))]
+struct MessageClusterEnvelope<M>
+where
+    M: MessageCluster + Send,
+    M::Result: Send,
+{
+    msg: Option<M>,
+    reply_to: Option<ReplyToRefCluster<M>>,
+}
+
+#[cfg(all(unix, feature = "ipc-cluster"))]
+impl<R, M> Payload<R> for MessageClusterEnvelope<M>
+where
+    R: ActorReceiver + MessageClusterHandler<M>,
+    M: MessageCluster + Send + 'static,
+    M::Result: Send,
+{
+    fn handle(&mut self, actor: &mut R, ctx: &mut R::Context) {
+        if let Some(msg) = self.msg.take() {
+            // [todo]: if reply_to is none (i.e. tell and not ask), and response is Future not Result,
+            // we have to poll the future, or the future will never get polled.
+            let response = <R as MessageClusterHandler<M>>::handle(actor, msg, ctx);
+            if let Some(reply_to) = self.reply_to.take() {
+                if reply_to.tx.is_some() {
+                    response.handle(ctx, reply_to);
+                }
+            }
+        } else {
+            trace!("MessageClusterEnvelopee_handle_error msg is None")
+        }
     }
 }
 

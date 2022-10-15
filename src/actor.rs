@@ -15,6 +15,9 @@ use crate::message::{
 };
 use crate::system::{self, guardian::ActorGuardianType, NodeId, SystemId, SystemMessage};
 
+#[cfg(all(unix, feature = "ipc-cluster"))]
+use crate::message::{handler::MessageClusterHandler, MessageCluster, MessageClusterSend};
+
 // =============================================================================
 // ACTOR ID, PATH, AND ADDRESSES.
 // [todo]: Weak Addresses
@@ -51,6 +54,12 @@ where
     M: Message + Send + 'static,
     M::Result: Send;
 // [todo][low-priority]: Make MessageAddr Serializable, by storing the typeid of R.
+
+#[cfg(all(unix, feature = "ipc-cluster"))]
+pub struct MessageClusterAddr<M>(pub Box<dyn ActorMessageClusterReceiver<M> + Send + Sync>)
+where
+    M: MessageCluster + Send + 'static,
+    M::Result: Send;
 
 /// Address/Reference to an Actor that is dependent on the actor type (struct generic) and message type (method generic).
 /// Provides all the services related to an actor.
@@ -232,7 +241,7 @@ impl Clone for Addr {
 }
 
 #[async_trait]
-impl<M: Message + Send, R: ActorReceiver> ActorMessageReceiver<M> for ActorAddr<R>
+impl<M, R> ActorMessageReceiver<M> for ActorAddr<R>
 where
     R: ActorReceiver + MessageHandler<M> + 'static,
     M: Message + Send + 'static,
@@ -387,6 +396,17 @@ impl<R: ActorReceiver> ActorAddr<R> {
         self.into()
     }
 
+    /// get the MessageAddr of the actor for a message type
+    #[cfg(all(unix, feature = "ipc-cluster"))]
+    pub fn message_cluster_addr<M>(&self) -> MessageClusterAddr<M>
+    where
+        R: ActorReceiver + MessageClusterHandler<M> + 'static,
+        M: MessageCluster + Send + 'static,
+        M::Result: 'static,
+    {
+        self.into()
+    }
+
     /// Get the weak actor refernce of the actor.
     pub fn downgrade(&self) -> ActorWeakAddr<R> {
         ActorWeakAddr(Arc::downgrade(&self.0))
@@ -428,6 +448,36 @@ impl<R: ActorReceiver> ActorAddr<R> {
             Err(MessageSendError::ErrSenderNotResolved)
         }
     }
+
+    /// Send a message to the actor.
+    #[cfg(all(unix, feature = "ipc-cluster"))]
+    pub fn tell_addr<M>(&self, msg: M) -> Result<(), MessageSendError>
+    where
+        R: ActorReceiver + MessageClusterHandler<M> + 'static,
+        M: MessageCluster + Send + 'static,
+        M::Result: 'static,
+    {
+        if let Some(sender) = &self.0.sender {
+            sender.tell_addr(msg)
+        } else {
+            Err(MessageSendError::ErrSenderNotResolved)
+        }
+    }
+
+    /// Send a message and receive a response from the actor.
+    #[cfg(all(unix, feature = "ipc-cluster"))]
+    pub async fn ask_addr<M>(&self, msg: M) -> Result<M::Result, MessageSendError>
+    where
+        R: ActorReceiver + MessageClusterHandler<M> + 'static,
+        M: MessageCluster + Send + 'static,
+        M::Result: 'static,
+    {
+        if let Some(sender) = &self.0.sender {
+            sender.ask_addr(msg).await
+        } else {
+            Err(MessageSendError::ErrSenderNotResolved)
+        }
+    }
 }
 
 impl<R: ActorReceiver> Clone for ActorAddr<R> {
@@ -461,6 +511,86 @@ impl<R: ActorReceiver> Clone for ActorWeakAddr<R> {
 pub(in crate::actor) struct ActorAddrInner<R: ActorReceiver> {
     pub(in crate::actor) id: Option<ActorId>,
     pub(in crate::actor) sender: Option<MessageSender<R>>,
+}
+
+#[cfg(all(unix, feature = "ipc-cluster"))]
+#[async_trait]
+pub trait ActorMessageClusterReceiver<M: MessageCluster + Send + 'static> {
+    fn boxed(&self) -> Box<dyn ActorMessageClusterReceiver<M> + Send + Sync>;
+    fn tell_msg_addr(&self, msg: M) -> Result<(), MessageSendError>;
+    async fn ask_msg_addr(&self, msg: M) -> Result<M::Result, MessageSendError>;
+}
+
+#[cfg(all(unix, feature = "ipc-cluster"))]
+#[async_trait]
+impl<M, R> ActorMessageClusterReceiver<M> for ActorAddr<R>
+where
+    R: ActorReceiver + MessageClusterHandler<M> + 'static,
+    M: MessageCluster + Send + 'static,
+    M::Result: 'static,
+{
+    fn boxed(&self) -> Box<dyn ActorMessageClusterReceiver<M> + Send + Sync> {
+        Box::new(self.clone())
+    }
+
+    fn tell_msg_addr(&self, msg: M) -> Result<(), MessageSendError> {
+        self.tell_addr(msg)
+    }
+
+    async fn ask_msg_addr(&self, msg: M) -> Result<M::Result, MessageSendError> {
+        self.ask_addr(msg).await
+    }
+}
+
+#[cfg(all(unix, feature = "ipc-cluster"))]
+impl<M> MessageClusterAddr<M>
+where
+    M: MessageCluster + Send + 'static,
+    M::Result: Send,
+{
+    pub fn tell(&self, msg: M) -> Result<(), MessageSendError> {
+        self.0.tell_msg_addr(msg)
+    }
+
+    pub async fn ask(&self, msg: M) -> Result<M::Result, MessageSendError> {
+        self.0.ask_msg_addr(msg).await
+    }
+}
+
+#[cfg(all(unix, feature = "ipc-cluster"))]
+impl<M> std::fmt::Debug for MessageClusterAddr<M>
+where
+    M: MessageCluster + Send + 'static,
+    M::Result: Send,
+{
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        write!(f, "{}", "MessageClusterAddr")
+    }
+}
+
+#[cfg(all(unix, feature = "ipc-cluster"))]
+impl<M> Clone for MessageClusterAddr<M>
+where
+    M: MessageCluster + Send + 'static,
+    M::Result: Send,
+{
+    fn clone(&self) -> Self {
+        Self(self.0.boxed())
+    }
+}
+
+#[cfg(all(unix, feature = "ipc-cluster"))]
+impl<R, M> From<&ActorAddr<R>> for MessageClusterAddr<M>
+where
+    R: ActorReceiver + MessageClusterHandler<M> + 'static,
+    M: MessageCluster + Send + 'static,
+    M::Result: 'static,
+{
+    fn from(addr: &ActorAddr<R>) -> Self {
+        MessageClusterAddr(<ActorAddr<R> as ActorMessageClusterReceiver<M>>::boxed(
+            &addr,
+        ))
+    }
 }
 
 #[cfg(feature = "debug-log")]

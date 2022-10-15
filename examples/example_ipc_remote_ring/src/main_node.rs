@@ -71,7 +71,7 @@ async fn run_main() {
     if args.send_ask > 0 {
         let now = std::time::Instant::now();
         let ask_msg = RingMessageAsk(msg);
-        addr.ask(ask_msg).await.expect("main_addr_ask_failed");
+        addr.ask_addr(ask_msg).await.expect("main_addr_ask_failed");
         let msg_duration = now.elapsed();
         println!(
             "time_taken_for_ring_messaging_to_complete: {:#?}",
@@ -80,7 +80,7 @@ async fn run_main() {
     } else {
         let now = std::time::Instant::now();
         let tell_msg = RingMessageTell(msg);
-        addr.tell(tell_msg).expect("main_addr_tell_failed");
+        addr.tell_addr(tell_msg).expect("main_addr_tell_failed");
 
         loop {
             if END_TEST.load(Ordering::SeqCst) {

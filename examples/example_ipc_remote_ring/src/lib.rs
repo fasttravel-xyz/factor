@@ -27,11 +27,11 @@ pub struct RingMessageAsk(pub RingMessage);
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct RingMessageTell(pub RingMessage);
 
-impl Message for RingMessageAsk {
+impl MessageCluster for RingMessageAsk {
     type Result = ();
 }
 
-impl Message for RingMessageTell {
+impl MessageCluster for RingMessageTell {
     type Result = ();
 }
 
@@ -39,8 +39,8 @@ impl ActorReceiver for WorkerActor {
     type Context = BasicContext<Self>;
 }
 
-impl MessageHandler<RingMessageAsk> for WorkerActor {
-    type Result = MessageResponseType<<RingMessageAsk as Message>::Result>;
+impl MessageClusterHandler<RingMessageAsk> for WorkerActor {
+    type Result = MessageResponseType<<RingMessageAsk as MessageCluster>::Result>;
 
     fn handle(&mut self, msg: RingMessageAsk, ctx: &mut Self::Context) -> Self::Result {
         // println!("worker_ring_message_received: {:#?} ", msg);
@@ -59,13 +59,13 @@ impl MessageHandler<RingMessageAsk> for WorkerActor {
                     .get_remote_addr::<MainActor>(0, ROOT_ACTOR_ADDR)
                     .await
                     .expect("get_root_addr_failed_for_main");
-                main_addr.ask(next_msg).await.expect("main_addr_ask_failed");
+                main_addr.ask_addr(next_msg).await.expect("main_addr_ask_failed");
             } else {
                 let next_addr = system
                     .get_remote_addr::<WorkerActor>(msg.0.next_node, ROOT_ACTOR_ADDR)
                     .await
                     .expect("get_worker_root_addr_failed");
-                next_addr.ask(next_msg).await.expect("next_addr_ask_failed");
+                next_addr.ask_addr(next_msg).await.expect("next_addr_ask_failed");
             }
         };
 
@@ -76,8 +76,8 @@ impl MessageHandler<RingMessageAsk> for WorkerActor {
     }
 }
 
-impl MessageHandler<RingMessageTell> for WorkerActor {
-    type Result = MessageResponseType<<RingMessageTell as Message>::Result>;
+impl MessageClusterHandler<RingMessageTell> for WorkerActor {
+    type Result = MessageResponseType<<RingMessageTell as MessageCluster>::Result>;
 
     fn handle(&mut self, msg: RingMessageTell, ctx: &mut Self::Context) -> Self::Result {
         // println!("worker_ring_message_received: {:#?} ", msg);
@@ -96,13 +96,13 @@ impl MessageHandler<RingMessageTell> for WorkerActor {
                     .get_remote_addr::<MainActor>(0, ROOT_ACTOR_ADDR)
                     .await
                     .expect("get_root_addr_failed_for_main");
-                main_addr.tell(next_msg).expect("main_addr_tell_failed");
+                main_addr.tell_addr(next_msg).expect("main_addr_tell_failed");
             } else {
                 let next_addr = system
                     .get_remote_addr::<WorkerActor>(msg.0.next_node, ROOT_ACTOR_ADDR)
                     .await
                     .expect("get_worker_root_addr_failed");
-                next_addr.tell(next_msg).expect("next_addr_tell_failed");
+                next_addr.tell_addr(next_msg).expect("next_addr_tell_failed");
             }
         };
 
@@ -116,8 +116,8 @@ impl ActorReceiver for MainActor {
     type Context = BasicContext<Self>;
 }
 
-impl MessageHandler<RingMessageAsk> for MainActor {
-    type Result = MessageResponseType<<RingMessageAsk as Message>::Result>;
+impl MessageClusterHandler<RingMessageAsk> for MainActor {
+    type Result = MessageResponseType<<RingMessageAsk as MessageCluster>::Result>;
 
     fn handle(&mut self, msg: RingMessageAsk, ctx: &mut Self::Context) -> Self::Result {
         // println!("main_ring_message_received: {:#?} ", msg);
@@ -137,7 +137,7 @@ impl MessageHandler<RingMessageAsk> for MainActor {
                     .get_remote_addr::<WorkerActor>(1, ROOT_ACTOR_ADDR)
                     .await
                     .expect("get_worker_root_addr_failed");
-                next_addr.ask(next_msg).await.expect("next_addr_ask_failed");
+                next_addr.ask_addr(next_msg).await.expect("next_addr_ask_failed");
             } else {
                 println!("ring_complete_final_sum: {}", msg.0.sum);
             }
@@ -147,8 +147,8 @@ impl MessageHandler<RingMessageAsk> for MainActor {
     }
 }
 
-impl MessageHandler<RingMessageTell> for MainActor {
-    type Result = MessageResponseType<<RingMessageTell as Message>::Result>;
+impl MessageClusterHandler<RingMessageTell> for MainActor {
+    type Result = MessageResponseType<<RingMessageTell as MessageCluster>::Result>;
 
     fn handle(&mut self, msg: RingMessageTell, ctx: &mut Self::Context) -> Self::Result {
         // println!("main_ring_message_received: {:#?} ", msg);
@@ -168,7 +168,7 @@ impl MessageHandler<RingMessageTell> for MainActor {
                     .get_remote_addr::<WorkerActor>(1, ROOT_ACTOR_ADDR)
                     .await
                     .expect("get_worker_root_addr_failed");
-                next_addr.tell(next_msg).expect("next_addr_tell_failed");
+                next_addr.tell_addr(next_msg).expect("next_addr_tell_failed");
             } else {
                 println!("ring_complete_final_sum: {}", msg.0.sum);
                 END_TEST.store(true, Ordering::SeqCst);

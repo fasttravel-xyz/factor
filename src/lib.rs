@@ -43,12 +43,20 @@ pub use message::{
     Message, MessageSendError,
 };
 pub use system::{
-    executor::{ExecutorTask, ExecutorTaskFactory, ScheduledTaskHandle, RemoteJoinHandle},
+    executor::{ExecutorTask, ExecutorTaskFactory, RemoteJoinHandle, ScheduledTaskHandle},
     ActorState, ActorSystemCofig, SystemCommand, SystemEvent, SystemMessage, SystemRef,
 };
 
 #[cfg(all(unix, feature = "ipc-cluster"))]
-pub use system::cluster::{NodeCreationConfig, NodeId, RemoteMessageTypeProvider};
+pub use crate::{
+    message::{
+        handler::{
+            MessageClusterHandler, MessageClusterResponse, ReplyToCluster, ReplyToRefCluster,
+        },
+        MessageCluster,
+    },
+    system::cluster::{NodeCreationConfig, NodeId, RemoteMessageTypeProvider},
+};
 
 pub mod prelude {
     //! The 'factor' prelude.
@@ -77,7 +85,10 @@ pub mod prelude {
 
     #[doc(hidden)]
     #[cfg(all(unix, feature = "ipc-cluster"))]
-    pub use crate::system::cluster::{NodeCreationConfig, NodeId, RemoteMessageTypeProvider};
+    pub use crate::{
+        message::{handler::MessageClusterHandler, MessageCluster},
+        system::cluster::{NodeCreationConfig, NodeId, RemoteMessageTypeProvider},
+    };
 }
 
 ////////////////////////////////////////////////////////////////////////////////

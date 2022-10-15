@@ -29,7 +29,7 @@ async fn run_worker() {
 }
 
 // run the main node, not this worker node. main node will spawn this.
-// cargo run --bin main_node --release -- --num-rounds 2 --num-nodes 20
+// cargo run --bin main_node --release --  --send-ask 1 --num-rounds 2 --num-nodes 20
 #[tokio::main(flavor = "multi_thread", worker_threads = 1)]
 async fn main() {
     run_worker().await;
